@@ -27,3 +27,28 @@ create policy edu_analytics_state_update
   on public.edu_analytics_state for update to authenticated
   using ((select lower(auth.jwt() ->> 'email')) = 'cejardiminterlagos@nrecascavel.com')
   with check ((select lower(auth.jwt() ->> 'email')) = 'cejardiminterlagos@nrecascavel.com');
+
+create or replace function public.edu_analytics_save_state(
+  p_payload jsonb,
+  p_expected_revision bigint
+)
+returns table (revision bigint, updated_at timestamptz)
+language sql
+security invoker
+set search_path = ''
+set statement_timeout = '45s'
+as $$
+  update public.edu_analytics_state as state
+  set payload = p_payload,
+      revision = state.revision + 1,
+      updated_at = now(),
+      updated_by = auth.uid()
+  where state.workspace_id = 'jardim-interlagos'
+    and state.revision = p_expected_revision
+  returning state.revision, state.updated_at;
+$$;
+
+revoke all on function public.edu_analytics_save_state(jsonb, bigint) from public, anon;
+grant execute on function public.edu_analytics_save_state(jsonb, bigint) to authenticated;
+
+notify pgrst, 'reload schema';

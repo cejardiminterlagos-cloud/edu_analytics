@@ -264,7 +264,14 @@ window.Edu = (() => {
   async function storeCloudMeta(snapshot,revision){localStorage.setItem(CLOUD_META,JSON.stringify({revision,hash:await hashDB(snapshot)}));}
   async function fetchCloudRow(){const{data,error}=await cloudClient.from(CLOUD_TABLE).select('payload,revision,updated_at').eq('workspace_id',CLOUD_WORKSPACE).maybeSingle();if(error)throw error;return data;}
   async function insertCloud(snapshot){const{data,error}=await cloudClient.from(CLOUD_TABLE).insert({workspace_id:CLOUD_WORKSPACE,payload:snapshot,revision:1,updated_by:cloudUser.id}).select('revision,updated_at').single();if(error)throw error;return data;}
-  async function updateCloud(snapshot,expectedRevision){const{data,error}=await cloudClient.from(CLOUD_TABLE).update({payload:snapshot,revision:expectedRevision+1,updated_at:new Date().toISOString(),updated_by:cloudUser.id}).eq('workspace_id',CLOUD_WORKSPACE).eq('revision',expectedRevision).select('revision,updated_at').maybeSingle();if(error)throw error;return data;}
+  async function updateCloud(snapshot,expectedRevision){
+   const {data,error}=await cloudClient.rpc('edu_analytics_save_state',{
+    p_payload:snapshot,p_expected_revision:expectedRevision
+   }).maybeSingle();
+   if(error?.code==='57014')throw Error('O Supabase demorou para concluir a gravação. Os dados estão neste navegador. Use Sincronizar agora para tentar novamente.');
+   if(error)throw error;
+   return data;
+  }
   async function activateCloud(row){const next=validateDB(clone(row.payload));await persistLocal(next);db=next;cloudRevision=Number(row.revision);cloudReady=true;cloudBlocked=false;cloudConflict=null;await storeCloudMeta(db,cloudRevision);hideCloudGate();render();cloudStatus('Nuvem sincronizada · '+cloudUser.email,'ok');}
   function enterCloudConflict(remote,local){cloudConflict={remote,local:clone(local)};cloudReady=false;cloudBlocked=true;$('#cloud-login').hidden=true;$('#cloud-conflict').hidden=false;$('#cloud-conflict-summary').textContent=`Este dispositivo tem ${local.students.filter(s=>s.rosterStudent!==false).length} aluno(s); a nuvem tem ${remote.payload.students.filter(s=>s.rosterStudent!==false).length}. Escolha qual versão manter. A outra não será apagada sem sua escolha.`;showCloudGate('Sincronização pausada para evitar sobrescrever dados.');cloudStatus('Conflito: escolha uma versão para continuar.','error');}
   async function uploadLocal(snapshot,expectedRevision){const result=await updateCloud(snapshot,expectedRevision);if(!result){const latest=await fetchCloudRow();if(latest)enterCloudConflict(latest,snapshot);else throw Error('A base na nuvem foi removida durante a sincronização.');return false;}cloudRevision=Number(result.revision);cloudReady=true;cloudBlocked=false;cloudConflict=null;await storeCloudMeta(snapshot,cloudRevision);hideCloudGate();cloudStatus('Nuvem sincronizada · '+cloudUser.email,'ok');return true;}
