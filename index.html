@@ -633,7 +633,35 @@ window.Edu = (() => {
   if(el.matches('[data-map]')){mergePreview=null;$('#merge-result').innerHTML='';}
   if(el.id==='restore-file'){const file=el.files[0];if(!file)return;if(file.size>20*1024*1024)throw Error('Backup maior que 20 MB.');const next=validateDB(JSON.parse(await file.text()));if(!confirm(`Restaurar ${next.students.filter(s=>s.rosterStudent!==false).length} alunos e ${next.charges.length} cobranças? A base atual será substituída. Baixe um backup antes de continuar.`)){el.value='';return;}await save(next);render();notify('Backup restaurado.');}
  }catch(err){notify(err.message,true);}});
- let searchTimer;document.addEventListener('input',event=>{if(event.target.id==='monthly-search'){const value=event.target.value;clearTimeout(searchTimer);searchTimer=setTimeout(()=>{monthlyFilters.search=value;page=1;render();$('#monthly-search').focus();},220);}else if(event.target.id==='filter-search'){const input=event.target,value=input.value;clearTimeout(searchTimer);searchTimer=setTimeout(()=>{filters.search=value;page=1;render();const replacement=$('#filter-search');replacement.focus();},220);}});
+ let searchTimer;
+ const isStudentSearch=input=>['filter-search','monthly-search'].includes(input.id);
+ function scheduleStudentSearch(input){
+  const id=input.id;
+  const currentFilters=id==='monthly-search'?monthlyFilters:filters;
+  currentFilters.search=input.value;
+  clearTimeout(searchTimer);
+  searchTimer=setTimeout(()=>{
+   if(!input.isConnected)return;
+   const focused=document.activeElement===input;
+   const {selectionStart,selectionEnd,selectionDirection}=input;
+   page=1;
+   render();
+   const replacement=document.getElementById(id);
+   if(focused&&replacement){
+    replacement.focus({preventScroll:true});
+    replacement.setSelectionRange(selectionStart,selectionEnd,selectionDirection);
+   }
+  },220);
+ }
+ document.addEventListener('input',event=>{
+  if(isStudentSearch(event.target)&&!event.isComposing)scheduleStudentSearch(event.target);
+ });
+ document.addEventListener('compositionstart',event=>{
+  if(isStudentSearch(event.target))clearTimeout(searchTimer);
+ });
+ document.addEventListener('compositionend',event=>{
+  if(isStudentSearch(event.target))scheduleStudentSearch(event.target);
+ });
  window.addEventListener('hashchange',()=>{page=1;render();});window.addEventListener('afterprint',()=>document.body.classList.remove('printing'));
   window.addEventListener('online',()=>syncCloudNow());
   db=clone(seed);load().then(()=>{render();initializeCloud();});window.EduApp={getState:()=>clone(db),validateDB};
