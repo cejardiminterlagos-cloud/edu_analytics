@@ -545,11 +545,32 @@ window.Edu = (() => {
  }
  function printStudent(){const s=byId(studentId),m=metric(s);$('#print-area').innerHTML=`<header><h1>Colégio Estadual Jardim Interlagos</h1><p>Notificação aos pais ou responsáveis</p></header><p>Data: ${formatDate(E.today())}</p><h2>${h(s.name||'Nome não informado')}</h2><p>Matrícula / CGM: ${h(s.registration)}<br>Turma: ${h(group(s))}</p><p>Prezados pais ou responsáveis, solicitamos contato com a secretaria para acompanhamento da situação escolar do(a) estudante acima identificado(a).</p><h3>Frequência escolar</h3><p>${m.frequency==null?'Frequência não informada na base atual.':`Período: ${h(s.period||'não informado')}<br>Aulas dadas: ${s.classes} · Faltas: ${s.absences}<br>Frequência: ${pct(m.frequency)} · Situação: ${h(m.freqStatus)}`}</p><h3>Documentos a regularizar</h3>${m.docs.length?`<ul>${m.docs.map(k=>`<li>${h(E.DOCS[k])} — ${h(s.documents[k])}</li>`).join('')}</ul>`:'<p>Nenhuma pendência documental identificada nos dados disponíveis.</p>'}<p>Solicitamos a apresentação dos documentos ou o esclarecimento das pendências junto à secretaria.</p><p class="signature">____________________________________<br>Secretaria / responsável pelo atendimento</p><p class="signature">____________________________________<br>Ciência do pai, mãe ou responsável · Data: ____/____/________</p>`;document.body.classList.add('printing');window.print();}
 
+ function printReportTitle(monthly,months){
+  if(monthly){
+   const parts=['Frequência mensal',...months.map(monthLabel)];
+   if(monthlyFilters.group)parts.push('Turma '+monthlyFilters.group);
+   if(monthlyFilters.search.trim())parts.push('Busca “'+monthlyFilters.search.trim()+'”');
+   if(monthlyFilters.scope==='all')parts.push('Todos os alunos');
+   return parts.join(' · ');
+  }
+  const parts=[];
+  if(filters.group)parts.push('Turma '+filters.group);
+  const fields={freq:'Frequência',dist:'Distorção',docs:'Documentos',enrollment:'Confirmação de matrícula',status:'Situação da matrícula',course:'Curso especial',support:'Etiqueta de apoio',work:'Trabalho'};
+  for(const [key,label] of Object.entries(fields)){
+   const value=filters[key];
+   if(!value)continue;
+   const optionText=[...($('#filter-'+key)?.options||[])].find(o=>o.value===value)?.textContent||value;
+   parts.push(key==='dist'&&value==='eja'?optionText:label+' — '+optionText);
+  }
+  if(filters.alerts!=='')parts.push(filters.alerts==='0'?'Sem alerta identificado':filters.alerts+' alerta(s)');
+  if(filters.search.trim())parts.push('Busca “'+filters.search.trim()+'”');
+  return parts.join(' · ')||'Todos os alunos';
+ }
  async function printRecorte(monthly=false){
   const students=monthly?monthlyRows():sorted(filtered());
   const distortion=!monthly&&['sim','eja'].includes(filters.dist);
   const months=selectedMonths(),compare=months.length===2;
-  const title=monthly?'Relatório de frequência mensal':filters.dist==='eja'?'Candidatos EJA':distortion?'Alunos com distorção idade-série':'Relatório de alunos';
+  const title=printReportTitle(monthly,months);
   const columns=monthly?['CGM','Aluno','Turma',...months.flatMap(m=>[m+' Aulas',m+' Faltas',m+' Frequência']),...(compare?['Frequência consolidada']:[])]:distortion?['CGM','Aluno','Série','Telefone','Nome do responsável']:['CGM','Aluno','Turma','Frequência','Distorção','Pendências documentais','Matrícula'];
   const rows=students.map(s=>{
    if(monthly){const m=E.monthlySummary(s,months);return [s.registration,s.name,group(s),...m.records.flatMap(r=>[r.classes,r.absences,r.classes>0?pct(100*(r.classes-r.absences)/r.classes):'']),...(compare?[m.frequency==null?'':pct(m.frequency)]:[])];}
