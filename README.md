@@ -11,6 +11,8 @@ Aplicação estática de análise escolar. Os relatórios são interpretados no 
 - O arquivo CSV/XLSX/PDF original é processado no navegador e não é enviado como arquivo bruto; somente os dados interpretados e salvos no EduAnalytics vão para a tabela.
 - Se estiver sem conexão, é possível continuar neste navegador; o painel marca as alterações como não sincronizadas e permite tentar novamente depois.
 
-## Ativar login por link
+## Primeiro acesso e login
 
-No painel do Supabase, em **Authentication → URL Configuration**, defina o Site URL e inclua `https://eduanalytics-seven.vercel.app/` em Redirect URLs. O login usa link mágico para esse endereço.
+O usuário é `cejardiminterlagos@nrecascavel.com`. Em **Primeiro acesso? Criar usuário**, cadastre uma senha com pelo menos 8 caracteres e confirme o e-mail; nos próximos acessos, use **Entrar** com e-mail e senha.
+
+No painel do Supabase, em **Authentication → URL Configuration**, defina o Site URL e inclua `https://eduanalytics-seven.vercel.app/` em Redirect URLs para que a confirmação do primeiro cadastro retorne ao app.
