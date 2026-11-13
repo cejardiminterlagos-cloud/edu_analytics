@@ -16,6 +16,17 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),vm=
  await page.locator('#grades-file').setInputFiles(process.env.GRADE_PDF||'C:/Users/Bruno/Downloads/6apdf.pdf');
  await page.getByRole('button',{name:'Ler e conferir colunas',exact:true}).click();await page.locator('#grades-pdf-links').waitFor();
  assert.equal(await page.locator('[data-grade-link]').count(),35);assert.equal(await page.locator('[data-grade-link="2"]').inputValue(),'00000002');
+ await page.locator('[data-grade-link="2"]').fill('00000001');await page.locator('[data-grade-link="3"]').fill('00000001');
+ await page.getByRole('button',{name:'Conferir notas e vínculos'}).click();
+ assert.equal(await page.locator('.grade-link-conflict').count(),3);assert.match(await page.locator('#grade-link-message-1').innerText(),/chamadas 1, 2, 3/);
+ assert.equal(await page.evaluate(()=>document.activeElement.dataset.gradeLink),'1');assert.equal(await page.locator('[data-action="grades-apply"]').count(),0);
+ await page.locator('[data-action="grade-link-goto"][data-value="3"]').click();assert.equal(await page.evaluate(()=>document.activeElement.dataset.gradeLink),'3');
+ await page.locator('[data-grade-skip="3"]').check();assert.equal(await page.locator('.grade-link-conflict').count(),2);
+ await page.locator('[data-grade-link="2"]').fill('00000002');assert.equal(await page.locator('.grade-link-conflict').count(),0);
+ await page.locator('[data-grade-skip="3"]').uncheck();assert.equal(await page.locator('.grade-link-conflict').count(),2);
+ await page.locator('[data-grade-link="3"]').fill('00000003');assert.equal(await page.locator('.grade-link-conflict').count(),0);
+ await page.locator('[data-grade-link="4"]').fill('99999999');assert.equal(await page.locator('.grade-link-conflict').count(),1);assert.match(await page.locator('#grade-link-message-4').innerText(),/CGM válido/);
+ await page.locator('[data-grade-link="4"]').fill('00000004');assert.equal(await page.locator('[aria-invalid="true"]').count(),0);
  await page.locator('[data-grade-link="2"]').fill('');await page.locator('[data-grade-link="2"]').dispatchEvent('change');
  await page.getByRole('button',{name:'Conferir notas e vínculos'}).click();assert.match(await page.locator('#notice').innerText(),/chamada 2/);
  await page.locator('[data-grade-link="2"]').fill('00000002');await page.locator('[data-grade-link="2"]').dispatchEvent('change');
