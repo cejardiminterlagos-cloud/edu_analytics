@@ -98,7 +98,34 @@
 <style>
 #dossier .individual-grades{min-width:600px}.individual-grades td,.individual-grades th{padding:9px}.individual-grades small{display:block}
 @media print{#print-area .individual-grades{width:100%;font:9pt Arial,sans-serif}#print-area .individual-grades th,#print-area .individual-grades td{padding:5pt;border:1px solid #bbb;font-size:9pt}#print-area .individual-grades tr{break-inside:avoid}#print-area .individual-grades thead{display:table-header-group}.grade-individual-print{print-color-adjust:exact;-webkit-print-color-adjust:exact}}
-</style></head>
+</style>
+<style id="compact-print-styles">
+@media print{
+ @page{size:A4;margin:12mm}
+ #print-area .grade-print{break-after:auto;margin:0 0 3mm;font:8pt Arial,sans-serif}
+ #print-area .grade-print-heading{border:0;background:white;text-align:left;padding:0 0 3pt;white-space:normal}
+ #print-area .grade-print h1{font-size:11pt;margin:0 0 2pt}
+ #print-area .grade-print p{font-size:7pt;margin:2pt 0;line-height:1.15;font-weight:normal}
+ #print-area .grade-matrix th,#print-area .grade-matrix td{padding:2pt 1.5pt;line-height:1.1}
+ #print-area .grade-matrix small{margin-top:0;line-height:1.1}#print-area .grade-matrix thead{break-inside:avoid;break-after:avoid}
+ #print-area .grade-print-notes{font:7pt Arial,sans-serif;break-inside:avoid}
+ #print-area .grade-print-notes p{font-size:7pt;line-height:1.15;margin:3pt 0}
+ #print-area .grade-legend{gap:3pt;margin:4pt 0}
+ #print-area .grade-legend span{font-size:7pt;padding:2pt 3pt}
+ #print-area .grade-individual-print{font:9pt Arial,sans-serif}
+ #print-area .grade-individual-print h1{font-size:13pt;margin:0 0 5pt}
+ #print-area .grade-individual-print p{font-size:8pt;line-height:1.2;margin:4pt 0}
+ #print-area .individual-grades th,#print-area .individual-grades td{padding:3pt 4pt;line-height:1.15;white-space:normal}
+ #print-area .individual-grades small{font-size:7pt;margin-top:0}
+ #print-area .oficio-report .oficio-heading{padding:0 0 3mm}
+ #print-area .oficio-heading img{width:10mm;height:12mm;margin:0 auto 1mm}
+ #print-area .oficio-heading h1{font-size:12pt}
+ #print-area .oficio-heading p{font:8pt Arial,sans-serif;line-height:1.2;margin:1mm 0}
+ #print-area .oficio-report th,#print-area .oficio-report td{padding:3px 4px;line-height:1.2;white-space:normal}
+ #print-area .oficio-distortion td{height:7mm}
+}
+</style>
+</head>
 <body>
 <div id="cloud-gate" class="cloud-gate" role="dialog" aria-modal="true" aria-labelledby="cloud-title">
  <section class="cloud-card">
@@ -748,8 +775,8 @@ window.Edu = (() => {
   return {rows,subjects};
  }
  function gradeLegend(){return `<div class="grade-legend">${E.GRADE_LEVELS.map(l=>`<span class="grade-${l.key}"><b>${h(l.code)} · ${h(l.label)}</b>${l.range?' · '+h(l.range):''}</span>`).join('')}</div>`;}
- function gradeMatrix(rows,subjects,printing=false){
-  return `<table class="grade-matrix" style="--grade-width:${Math.max(700,subjects.length*80+300)}px"><colgroup><col style="width:7%"><col style="width:20%">${subjects.map(()=>'<col>').join('')}</colgroup><thead><tr><th scope="col">CGM</th><th scope="col">Estudante / turma</th>${subjects.map(([key,name],i)=>`<th scope="col" title="${h(name)}">${printing?'D'+(i+1):h(name)}</th>`).join('')}</tr></thead><tbody>${rows.map(s=>`<tr><th scope="row">${h(s.registration)}</th><td>${h(s.name)}<small>${h(s.group)}</small></td>${subjects.map(([key])=>{
+ function gradeMatrix(rows,subjects,printing=false,caption=''){
+  return `<table class="grade-matrix" style="--grade-width:${Math.max(700,subjects.length*80+300)}px"><colgroup><col style="width:7%"><col style="width:20%">${subjects.map(()=>'<col>').join('')}</colgroup><thead>${caption?`<tr><th class="grade-print-heading" colspan="${subjects.length+2}">${caption}</th></tr>`:''}<tr><th scope="col">CGM</th><th scope="col">Estudante / turma</th>${subjects.map(([key,name],i)=>`<th scope="col" title="${h(name)}">${printing?'D'+(i+1):h(name)}</th>`).join('')}</tr></thead><tbody>${rows.map(s=>`<tr><th scope="row">${h(s.registration)}</th><td>${h(s.name)}${printing?'':`<small>${h(s.group)}</small>`}</td>${subjects.map(([key])=>{
    const record=s.grades.get(key),summary=E.gradeSummary(record?.notes||[null,null,null]);
    const detail=record?'Notas: '+record.notes.map(gradeFormat).join(' / ')+' · '+summary.count+' de 3 trimestres':'Disciplina não importada para este estudante';
    return `<td class="grade-${summary.level.key}" title="${h(summary.level.label+' · '+detail)}"><b>${gradeFormat(summary.mean)}</b><small>${h(summary.level.code)}${summary.count&&summary.count<3?' · '+summary.count+'/3':''}</small></td>`;
@@ -875,15 +902,19 @@ window.Edu = (() => {
   download('se-liga-'+db.referenceYear+'.csv',E.toCSV([['Ano','CGM','Nome','Turma',...subjects.flatMap(([,name])=>[name+' · Média',name+' · Conceito',name+' · Trimestres'])],...rows.map(s=>[db.referenceYear,s.registration,s.name,s.group,...subjects.flatMap(([key])=>{const m=E.gradeSummary(s.grades.get(key)?.notes||[null,null,null]);return [m.mean===null?'':gradeFormat(m.mean),m.level.label,m.count];})])]));
  }
  function printGrades(){
-  const {rows,subjects}=gradeSelection(),chunks=[];
-  if(!rows.length)return;
-  for(let i=0;i<subjects.length;i+=15)chunks.push(subjects.slice(i,i+15));
+  const {rows,subjects}=gradeSelection();if(!rows.length)return;
   const groups=[...new Set(rows.map(s=>s.group))],area=$('#print-area');
   const recorte=[gradeFilters.search&&'Busca: '+gradeFilters.search,gradeFilters.level&&'Conceito: '+E.GRADE_LEVELS.find(l=>l.key===gradeFilters.level)?.label].filter(Boolean).join(' · ');
-  area.innerHTML=groups.flatMap(g=>chunks.map(subjects=>`<section class="grade-print"><h1>Se Liga! · ${h(g)} · ${db.referenceYear}</h1><p>${rows.filter(s=>s.group===g).length} estudantes${recorte?' · '+h(recorte):''} · Emitido em ${h(formatDate(E.today()))}</p>${gradeMatrix(rows.filter(s=>s.group===g),subjects,true)}${gradeLegend()}${gradeMethod()}<p class="grade-subjects">${subjects.map(([,name],i)=>'<b>D'+(i+1)+'</b> '+h(name)).join(' · ')}</p></section>`)).join('');
-  const style=document.createElement('style');style.id='grades-page-style';style.textContent='@page{size:A4 landscape;margin:10mm}';document.head.appendChild(style);
-  window.print();
+  area.innerHTML=groups.map(g=>{
+   const students=rows.filter(s=>s.group===g),available=subjects.filter(([key])=>students.some(s=>s.grades.has(key))),blocks=[];
+   for(let i=0;i<available.length;i+=15){
+    const columns=available.slice(i,i+15),caption=`<h1>Se Liga! · ${h(g)} · ${db.referenceYear}</h1><p>${students.length} estudantes${recorte?' · '+h(recorte):''} · ${h(formatDate(E.today()))}${available.length>15?' · Bloco '+(i/15+1):''}</p><p class="grade-subjects">${columns.map(([,name],j)=>'<b>D'+(j+1)+'</b> '+h(name)).join(' · ')}</p>`;
+    blocks.push(`<section class="grade-print">${gradeMatrix(students,columns,true,caption)}</section>`);
+   }return blocks.join('');
+  }).join('')+`<div class="grade-print-notes">${gradeLegend()}${gradeMethod()}</div>`;
+  const style=document.createElement('style');style.id='grades-page-style';style.textContent='@page{size:A4 landscape;margin:8mm}';document.head.appendChild(style);window.print();
  }
+
 
  function render(){
   route=location.hash.slice(1)||'painel';if(!['painel','alunos','frequencia','seliga','cobrancas','importar','calendario'].includes(route))route='painel';
