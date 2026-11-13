@@ -1,0 +1,17 @@
+const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),assert=require('assert/strict');
+(async()=>{const html=fs.readFileSync(path.resolve(__dirname,'../index.html'),'utf8'),seed=JSON.parse(html.match(/<script id="initial-data" type="application\/json">([\s\S]*?)<\/script>/)[1]);seed.students=[{id:'s1',registration:'001',name:'Teste Nuvem',group:'6º Ano A',series:'6EF',status:'MATRICULADO',documents:{},history:[],sources:{},rosterStudent:true}];
+ const b=await chromium.launch({headless:true,executablePath:process.env.EDGE_PATH||'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'});try{const p=await b.newPage();await p.route('https://**',r=>r.abort());
+ await p.addInitScript(seed=>{
+  let revision=10;const payload=seed,grade={year:2026,registration:'001',discipline:'Arte',t1:6,t2:7,t3:null,source_name:null,imported_at:null,edu_grade_enrollments:{name:'Teste Nuvem',class_group:'6º Ano A',call_number:null,pdf_name:null,pdf_group:null}};
+  window.calls=[];window.supabase={createClient:()=>({
+   auth:{onAuthStateChange:()=>{},getSession:async()=>({data:{session:{user:{id:'mock',email:'cejardiminterlagos@nrecascavel.com'}}}})},
+   from:table=>{const query={select:()=>query,eq:()=>query,order:()=>query,range:async()=>({data:[grade]}),maybeSingle:async()=>({data:{payload:structuredClone(payload),revision,updated_at:'2026-11-13T00:00:00Z'}}),single:async()=>({data:{revision}})};return query;},
+   rpc:(name,args)=>{window.calls.push({name,args});return {maybeSingle:async()=>({data:{revision:++revision,updated_at:'2026-11-13T01:00:00Z'}})};}
+  })};
+ },seed);
+ await p.goto('file:///'+path.resolve(__dirname,'../index.html').replaceAll('\\','/')+'#seliga');await p.waitForFunction(()=>window.EduApp?.getState().grades?.length===1);await p.locator('#cloud-gate').waitFor({state:'hidden'});
+ assert.deepEqual(await p.evaluate(()=>EduApp.getState().grades[0].notes),[6,7,null]);
+ await p.locator('details.panel summary').click();await p.locator('#grades-file').setInputFiles({name:'correcao.csv',mimeType:'text/csv',buffer:Buffer.from('CGM;Disciplina;T1;T2;T3\n001;Arte;;8;9')});await p.getByRole('button',{name:'Ler e conferir colunas'}).click();await p.getByRole('button',{name:'Conferir importação',exact:true}).click();await p.getByRole('button',{name:'Aplicar notas conferidas'}).click();await p.waitForFunction(()=>window.calls.length===1);
+ const call=await p.evaluate(()=>calls[0]);assert.equal(call.name,'edu_analytics_patch_v2');assert.equal(call.args.p_grades.length,1);assert.deepEqual(call.args.p_grades[0].notes,[6,8,9]);assert(!('grades' in call.args.p_fields));assert.equal(call.args.p_students.length,0);assert.equal(call.args.p_expected_revision,10);
+ console.log('PASS: relational hydration, cloud revision and single-grade RPC patch without JSON duplication.');
+ }finally{await b.close();}})().catch(e=>{console.error(e);process.exit(1)});

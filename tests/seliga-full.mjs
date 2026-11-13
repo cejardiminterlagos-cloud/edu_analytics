@@ -1,0 +1,16 @@
+import fs from 'node:fs';import vm from 'node:vm';import assert from 'node:assert/strict';
+const html=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');globalThis.window={};vm.runInThisContext(html.match(/<script id="engine">([\s\S]*?)<\/script>/)[1]);const E=window.Edu;
+const record={year:2026,registration:'001',name:'Aluno',group:'6 A',discipline:'Arte',notes:[6,null,0]};
+assert.equal(E.gradeDelta([record],[record]).p_grades.length,0);
+assert.equal(E.gradeDelta([record],[{...record,notes:[7,null,0]}]).p_grades.length,1);
+assert.deepEqual(E.gradeDelta([record],[]).p_removed_grades,[{year:2026,registration:'001',disciplineKey:'ARTE'}]);
+assert.equal(E.gradeDelta([], [record]).p_grades.length,1);
+const words=[{text:'2026',x:802,y:-55,width:20},{text:'Seriação: 6ºAno',x:200,y:-66,width:65},{text:'Turno: Tarde',x:310,y:-66,width:50},{text:'Turma: A',x:780,y:-66,width:37},{text:'ARTE',x:180,y:-137,width:25},...['T1','T2','T3'].map((text,i)=>({text,x:164+i*18.4,y:-150,width:7.5})),{text:'1',x:31,y:-180,width:3.6},{text:'ANA MARIA',x:48,y:-176,width:70},{text:'SILVA',x:48,y:-183,width:30},...[6.5,'--',0,'--'].map((text,i)=>({text:String(text),x:164+i*18.4,y:-180,width:7.5}))];
+const pdf=E.parseGradePDF([words]);assert.equal(pdf.students[0].name,'ANA MARIA SILVA');assert.deepEqual(pdf.students[0].subjects[0].notes,[6.5,null,0]);assert.equal(pdf.series,'6EF');
+assert.throws(()=>E.parseGradePDF([words.filter(w=>w.text!=='T3')]));
+assert.throws(()=>E.parseGradePDF([words.map(w=>w.text==='6.5'?{...w,text:'11'}:w)]));
+const student={registration:'001',name:'Ana Maria Silva',series:'6EF',group:'6º Ano A',shift:'Tarde'};
+assert.equal(E.suggestGradeLink(pdf.students[0],pdf,[student]),'001');
+assert.equal(E.suggestGradeLink(pdf.students[0],pdf,[student,{...student,registration:'002'}]),'');
+assert.equal(E.suggestGradeLink(pdf.students[0],pdf,[{...student,group:'6º Ano B'}]),'');
+console.log('PASS: PDF coordinates, extra column, multiline name, invalid input, ambiguous links and per-record sync.');

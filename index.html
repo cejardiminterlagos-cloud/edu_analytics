@@ -80,7 +80,22 @@
 @media screen and (max-width:1100px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media screen and (max-width:520px){.kpis{grid-template-columns:1fr 1fr;gap:8px}.kpis button{padding:11px}.dossier-tabs button{padding:6px 8px}.batch-file .form-grid{grid-template-columns:1fr}}
 </style>
-</head>
+
+<style id="grade-styles">
+.grade-legend{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}.grade-legend span{padding:7px 10px;border-radius:4px;font-size:12px}
+.grade-matrix{table-layout:fixed;min-width:var(--grade-width,1000px)}.grade-matrix th,.grade-matrix td{padding:10px 6px;vertical-align:middle;text-align:center;overflow-wrap:anywhere}.grade-matrix thead th{white-space:normal}.grade-matrix td:nth-child(2){text-align:left}.grade-matrix small{display:block;font-size:10px;color:inherit}.grade-matrix tbody th{font-variant-numeric:tabular-nums}
+.grade-below{color:#a92332;background:#fce8eb}
+.grade-basic{color:#984500;background:#fff0df}
+.grade-adequate{color:#20613d;background:#e3f2e8}
+.grade-advanced{color:#753cad;background:#f0e8f8}
+.grade-missing{color:#586775;background:#edf1f4}
+
+@media print{:root,html,body{background:#fff!important}#print-area .grade-print{font:8pt Arial,sans-serif;break-after:page}#print-area .grade-print:last-child{break-after:auto}#print-area .grade-print h1{font-size:16pt}#print-area .grade-print p{font-size:8pt;margin:5pt 0;line-height:1.3}#print-area .grade-matrix{width:100%;min-width:0;font-size:7pt;table-layout:fixed}#print-area .grade-matrix th,#print-area .grade-matrix td{padding:4pt 2pt;border:0.5pt solid #cbd4d0;font-size:7pt;vertical-align:middle}#print-area .grade-matrix tr{break-inside:avoid}#print-area .grade-matrix thead{display:table-header-group}#print-area .grade-matrix small{font-size:6pt}#print-area .grade-legend{gap:4pt;margin:7pt 0}#print-area .grade-legend span{font-size:7pt;padding:4pt}#print-area .grade-print{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+</style>
+<style>
+#dossier .individual-grades{min-width:600px}.individual-grades td,.individual-grades th{padding:9px}.individual-grades small{display:block}
+@media print{#print-area .individual-grades{width:100%;font:9pt Arial,sans-serif}#print-area .individual-grades th,#print-area .individual-grades td{padding:5pt;border:1px solid #bbb;font-size:9pt}#print-area .individual-grades tr{break-inside:avoid}#print-area .individual-grades thead{display:table-header-group}.grade-individual-print{print-color-adjust:exact;-webkit-print-color-adjust:exact}}
+</style></head>
 <body>
 <div id="cloud-gate" class="cloud-gate" role="dialog" aria-modal="true" aria-labelledby="cloud-title">
  <section class="cloud-card">
@@ -93,7 +108,7 @@
  </section>
 </div>
 <aside class="sidebar"><a class="brand" href="#painel"><svg width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M5 27V5h15l7 7v15H5Z M19 5v8h8 M10 18h12 M10 23h8" stroke="currentColor" stroke-width="2"/></svg><span>EduAnalytics<small>Jardim Interlagos · 2.0</small></span></a>
-<nav aria-label="Navegação principal"><a href="#painel">Visão geral</a><a href="#alunos">Cruzamento de alunos</a><a href="#frequencia">Frequência mensal</a><a href="#cobrancas">Cobranças e prazos</a><a href="#importar">Importar e cruzar</a><a href="#calendario">Calendário</a></nav>
+<nav aria-label="Navegação principal"><a href="#painel">Visão geral</a><a href="#alunos">Cruzamento de alunos</a><a href="#frequencia">Frequência mensal</a><a href="#seliga">Se Liga!</a><a href="#cobrancas">Cobranças e prazos</a><a href="#importar">Importar e cruzar</a><a href="#calendario">Calendário</a></nav>
 <div class="sidebar-bottom"><span class="local-dot"></span> Arquivos processados neste navegador<p id="storage-status" class="cloud-status" data-state="pending">Conectando à nuvem…</p><button class="secondary" data-action="cloud-sync">Sincronizar agora</button><button class="secondary" data-action="cloud-signout">Sair da nuvem</button><button class="secondary" data-action="backup">Baixar backup</button></div></aside>
 <main><header class="topbar"><span>Análise de dados escolares</span><label class="year-label">Ano de referência <input id="reference-year" type="number" min="2000" max="2100" aria-label="Ano de referência"></label></header><div id="notice" role="status" aria-live="polite" hidden></div><div id="persistent-warning" hidden></div><div id="view"><h1>EduAnalytics</h1><p>Conectando à nuvem…</p></div></main>
 <dialog id="dossier" aria-labelledby="dossier-title"><div id="dossier-body"></div></dialog>
@@ -264,7 +279,146 @@ window.Edu = (() => {
  }
  function validateEvents(events,year){if(!Number.isInteger(year)||year<2000||year>2100)throw Error('Ano deve estar entre 2000 e 2100.');return events.map(e=>{let start=dateISO(e.start),end=dateISO(e.end||e.start);if(!start||!end||start>end||Number(start.slice(0,4))!==year||Number(end.slice(0,4))!==year)throw Error('Períodos devem estar em ordem e dentro do ano selecionado.');if(!['feriado','recesso','ferias','planejamento'].includes(e.kind))throw Error('Tipo de período inválido.');return {start,end,kind:e.kind,label:String(e.label||'').slice(0,200)};});}
  function deadline(start,calendars){let iso=dateISO(start);if(!iso)throw Error('Informe a data da cobrança.');let d=new Date(iso+'T12:00:00Z'),count=0,missing=new Set();for(let i=0;i<3700;i++){d.setUTCDate(d.getUTCDate()+1);const day=d.toISOString().slice(0,10),year=d.getUTCFullYear(),cal=calendars[year];if(!cal?.reviewed)missing.add(year);const blocked=(cal?.events||[]).some(e=>['feriado','recesso'].includes(e.kind)&&e.start<=day&&e.end>=day);if(d.getUTCDay()!==0&&d.getUTCDay()!==6&&!blocked)count++;if(count===15)return {date:missing.size?null:day,estimate:day,missing:[...missing]};}throw Error('Calendário bloqueia um período excessivo.');}
- return {DOCS,IDEAL,LABELS,SPECIAL_COURSES,matchSpecialCourses,activeRosterStatus,isActiveRosterStudent,rosterPriority,normalize,esc,uid,today,dateISO,parseCSV,toCSV,series,number,docStatus,pending,metrics,isFinalYear,enrollmentSummary,month,migrateFrequency,monthlySummary,mergeStudentDatasets,validateEvents,deadline};
+ const GRADE_LEVELS=[
+  {key:'below',label:'Abaixo do básico',code:'AB',range:'< 6,0',color:'#a92332',background:'#fce8eb'},
+  {key:'basic',label:'Básico',code:'B',range:'≥ 6,0 e < 7,0',color:'#984500',background:'#fff0df'},
+  {key:'adequate',label:'Adequado',code:'AD',range:'≥ 7,0 e < 9,0',color:'#20613d',background:'#e3f2e8'},
+  {key:'advanced',label:'Avançado',code:'AV',range:'≥ 9,0',color:'#753cad',background:'#f0e8f8'},
+  {key:'missing',label:'Sem notas',code:'SN',range:'',color:'#586775',background:'#edf1f4'}
+ ];
+ function gradeNumber(value){
+  if(value==null||typeof value==='string'&&!value.trim())return null;
+  if(!['string','number'].includes(typeof value)||!/^\d+(?:[.,]\d+)?$/.test(String(value).trim()))throw Error('Nota inválida: use número de 0 a 10 ou deixe vazio.');
+  const n=Number(String(value).trim().replace(',','.'));
+  if(!Number.isFinite(n)||n<0||n>10)throw Error('Nota fora da faixa de 0 a 10.');
+  return n;
+ }
+ function gradeSummary(notes){
+  if(!Array.isArray(notes)||notes.length!==3)throw Error('Informe os três trimestres.');
+  const values=notes.map(gradeNumber).filter(n=>n!==null),count=values.length;
+  const mean=count?values.reduce((a,b)=>a+b,0)/count:null;
+  const level=GRADE_LEVELS[mean===null?4:mean<6?0:mean<7?1:mean<9?2:3];
+  return {mean,count,level};
+ }
+ const gradeKey=r=>JSON.stringify([r.year,r.registration,normalize(r.discipline)]);
+ function validateGrades(records){
+  if(!Array.isArray(records)||records.length>150000)throw Error('Base de notas inválida ou acima de 150 mil registros.');
+  const seen=new Set(),students=new Map();
+  for(const r of records){
+   if(!r||!Number.isInteger(r.year)||r.year<2000||r.year>2100||typeof r.registration!=='string'||!/^\d{1,40}$/.test(r.registration)||['name','group','discipline'].some(k=>typeof r[k]!=='string'||!r[k].trim()||r[k].length>200))throw Error('Nota sem CGM, nome, turma, disciplina ou ano válido.');
+   gradeSummary(r.notes);
+   if(r.callNumber!=null&&(!Number.isInteger(r.callNumber)||r.callNumber<1||r.callNumber>999))throw Error('Número de chamada inválido.');
+   for(const key of ['source','pdfName','pdfGroup'])if(r[key]!=null&&(typeof r[key]!=='string'||r[key].length>300))throw Error('Origem das notas inválida.');
+   if(r.importedAt!=null&&(typeof r.importedAt!=='string'||!Number.isFinite(Date.parse(r.importedAt))))throw Error('Data de importação inválida.');
+   if(r.notes.some(n=>n!==null&&typeof n!=='number'))throw Error('Notas do backup devem ser numéricas ou nulas.');
+   const key=gradeKey(r),studentKey=JSON.stringify([r.year,r.registration]),identity=JSON.stringify([normalize(r.name),normalize(r.group)]);
+   if(seen.has(key))throw Error('Disciplina duplicada para o mesmo CGM e ano.');
+   if(students.has(studentKey)&&students.get(studentKey)!==identity)throw Error('Nome ou turma divergente para o mesmo CGM e ano.');
+   seen.add(key);students.set(studentKey,identity);
+  }
+  return records;
+ }
+ function mergeGrades(existing,incoming){
+  validateGrades(existing);validateGrades(incoming);
+  const records=structuredClone(existing),positions=new Map(records.map((r,i)=>[gradeKey(r),i]));const identities=new Map();let added=0,updated=0;
+  for(const r of incoming){
+   const index=positions.get(gradeKey(r));
+   if(index===undefined){positions.set(gradeKey(r),records.length);records.push(structuredClone(r));added++;}
+   else{const old=records[index];records[index]={...old,...r,notes:r.notes.map((n,i)=>n===null?old.notes[i]:n)};updated++;}
+   identities.set(JSON.stringify([r.year,r.registration]),r);
+  }
+  for(const saved of records){const identity=identities.get(JSON.stringify([saved.year,saved.registration]));if(identity){saved.name=identity.name;saved.group=identity.group;for(const key of ['callNumber','pdfName','pdfGroup'])if(identity[key]!=null)saved[key]=identity[key];}}
+  validateGrades(records);return {records,added,updated};
+ }
+ function parseGrades(rows,map,year,students=[]){
+  if(!Number.isInteger(year)||year<2000||year>2100)throw Error('Ano letivo inválido.');
+  const used=Object.values(map).filter(v=>v!==null&&v!==undefined);
+  if(new Set(used).size!==used.length)throw Error('Cada coluna deve corresponder a um único campo.');
+  if(map.registration==null||map.discipline==null||!['t1','t2','t3'].some(k=>map[k]!=null))throw Error('Associe CGM, disciplina e pelo menos um trimestre.');
+  const roster=new Map(students.map(s=>[s.registration,s])),records=[],issues=[];
+  rows.forEach((row,i)=>{
+   if(!row.some(v=>String(v??'').trim()))return;
+   try{
+    const read=k=>map[k]==null?'':String(row[map[k]]??'').trim();
+    const registration=read('registration'),student=roster.get(registration);
+    const r={year,registration,name:read('name')||student?.name||'',group:read('group')||student?.group||'',discipline:read('discipline'),notes:['t1','t2','t3'].map(k=>gradeNumber(map[k]==null?null:row[map[k]]))};
+    validateGrades([r]);records.push(r);
+   }catch(err){issues.push('Linha '+(i+2)+': '+err.message);}
+  });
+  if(issues.length)throw Error(issues.slice(0,8).join('\n')+(issues.length>8?'\nMais '+(issues.length-8)+' linha(s) inválida(s).':''));
+  if(!records.length)throw Error('Nenhuma linha com notas encontrada.');
+  validateGrades(records);return records;
+ }
+
+ function parseGradePDF(pages){
+  const students=new Map();let metadata=null;
+  const normName=s=>normalize(s).replace(/[^A-Z0-9]/g,'');
+  for(const [pageIndex,words] of pages.entries()){
+   const sorted=[...words].sort((a,b)=>b.y-a.y||a.x-b.x),text=sorted.map(w=>w.text).join(' ');
+   const yearWord=words.find(w=>/^20\d{2}$/.test(w.text)&&w.y>-80);
+   const series=text.match(/Seria[çc][ãa]o:\s*(\d+)[ºª°]?\s*(Ano|S[ée]rie)/i),shift=text.match(/Turno:\s*(Manh[ãa]|Tarde|Noite|Integral)/i),className=text.match(/Turma:\s*([A-Z0-9]+)/i);
+   if(!yearWord||!series||!shift||!className)throw Error('Página '+(pageIndex+1)+': ano, série, turno ou turma não reconhecido.');
+   const current={year:Number(yearWord.text),series:series[1]+(/Ano/i.test(series[2])?'EF':'EM'),shift:shift[1],className:className[1],group:series[1]+'º '+(/Ano/i.test(series[2])?'Ano':'EM')+' '+className[1]+' · '+shift[1]};
+   if(metadata&&JSON.stringify(current)!==JSON.stringify(metadata))throw Error('O PDF reúne turmas diferentes. Envie um arquivo por turma.');metadata=current;
+   const headerYs=[...new Set(words.filter(w=>w.text==='T1').map(w=>Math.round(w.y)))].sort((a,b)=>b-a);
+   if(!headerYs.length)throw Error('Página '+(pageIndex+1)+': cabeçalhos T1/T2/T3 não encontrados.');
+   for(const [hi,hy] of headerYs.entries()){
+    const headers=words.filter(w=>Math.abs(w.y-hy)<2&&/^T[123]$/.test(w.text)).sort((a,b)=>a.x-b.x);
+    if(headers.length%3||headers.some((w,i)=>w.text!=='T'+(i%3+1)))throw Error('Cabeçalho trimestral incompleto.');
+    const first=headers[0].x,lower=headerYs[hi+1]===undefined?-Infinity:headerYs[hi+1]+25;
+    const calls=words.filter(w=>w.x<first-30&&/^\d{1,3}$/.test(w.text)&&w.y<hy-3&&w.y>lower).sort((a,b)=>b.y-a.y);
+    if(!calls.length)throw Error('Nenhuma chamada encontrada no bloco da página '+(pageIndex+1)+'.');
+    const subjects=[];
+    for(let i=0;i<headers.length;i+=3){
+     const left=headers[i].x-8,right=i+3<headers.length?headers[i+3].x-8:headers[i+2].x+40;
+     const name=words.filter(w=>w.y>hy+3&&w.y<hy+22&&w.x>=left&&w.x<right).sort((a,b)=>a.x-b.x).map(w=>w.text).join(' ').trim();
+     if(!name)throw Error('Disciplina não identificada na página '+(pageIndex+1)+'.');subjects.push({name,headers:headers.slice(i,i+3)});
+    }
+    for(const call of calls){
+     const nearby=words.filter(w=>Math.abs(w.y-call.y)<7.5),name=nearby.filter(w=>w.x>call.x+8&&w.x<first-8).sort((a,b)=>b.y-a.y||a.x-b.x).map(w=>w.text).join(' ').trim();
+     if(!name)throw Error('Nome não encontrado na chamada '+call.text+'.');
+     const number=Number(call.text),previous=students.get(number);
+     if(previous&&normName(previous.name)!==normName(name))throw Error('Nomes divergentes na chamada '+number+'.');
+     const student=previous||{callNumber:number,name,subjects:[]};
+     for(const subject of subjects){
+      if(student.subjects.some(s=>normalize(s.discipline)===normalize(subject.name)))throw Error('Disciplina repetida na chamada '+number+'.');
+      const notes=subject.headers.map(header=>{
+       const center=header.x+header.width/2,cells=nearby.filter(w=>Math.abs(w.y-call.y)<2&&Math.abs(w.x+w.width/2-center)<5);
+       if(cells.length!==1)throw Error('Nota não reconhecida: chamada '+number+', '+subject.name+', '+header.text+'.');
+       return /^[-–—]+$/.test(cells[0].text)?null:gradeNumber(cells[0].text);
+      });
+      student.subjects.push({discipline:subject.name,notes,page:pageIndex+1});
+     }
+     students.set(number,student);
+    }
+   }
+  }
+  const rows=[...students.values()].sort((a,b)=>a.callNumber-b.callNumber),sets=new Set(rows.map(s=>s.subjects.map(r=>normalize(r.discipline)).sort().join('|')));
+  if(!rows.length||sets.size!==1)throw Error('O PDF está incompleto: disciplinas diferentes entre estudantes.');
+  return {...metadata,students:rows};
+ }
+ function suggestGradeLink(row,report,students,existing=[]){
+  const compact=s=>normalize(s).replace(/[^A-Z0-9]/g,'');
+  const matches=students.filter(s=>{
+   const y=s.schoolYears?.[report.year]||s;
+   const name=compact(s.name),g=normalize(y.group||'');
+   const classMatch=(y.series===report.series||g.startsWith(report.series[0]))&&(g===report.className||new RegExp('(?:^|[ \\-])'+report.className+'(?:$|[ \\-·])').test(g));
+   const shift=!y.shift||normalize(y.shift)===normalize(report.shift);
+   return name===compact(row.name)&&classMatch&&shift;
+  });
+  if(matches.length===1)return matches[0].registration;
+  const saved=existing.filter(r=>r.year===report.year&&r.pdfGroup===report.group&&compact(r.pdfName||'')===compact(row.name)&&r.callNumber===row.callNumber);
+  const regs=[...new Set(saved.map(r=>r.registration))];
+  return !matches.length&&regs.length===1&&students.some(s=>s.registration===regs[0]&&compact(s.name)===compact(row.name))?regs[0]:'';
+ }
+
+ function gradeDelta(before=[],after=[]){
+  const old=new Map(before.map(r=>[gradeKey(r),r])),current=new Set(after.map(gradeKey));
+  const payload=r=>({year:r.year,registration:r.registration,discipline:r.discipline,disciplineKey:normalize(r.discipline),name:r.name,group:r.group,notes:r.notes,callNumber:r.callNumber??null,pdfName:r.pdfName??null,pdfGroup:r.pdfGroup??null,source:r.source??null,importedAt:r.importedAt??null});
+  return {p_grades:after.filter(r=>JSON.stringify(payload(old.get(gradeKey(r))||{notes:[]}))!==JSON.stringify(payload(r))).map(payload),p_removed_grades:before.filter(r=>!current.has(gradeKey(r))).map(r=>({year:r.year,registration:r.registration,disciplineKey:normalize(r.discipline)}))};
+ }
+
+ return {gradeDelta,parseGradePDF,suggestGradeLink,GRADE_LEVELS,gradeNumber,gradeSummary,gradeKey,validateGrades,mergeGrades,parseGrades,DOCS,IDEAL,LABELS,SPECIAL_COURSES,matchSpecialCourses,activeRosterStatus,isActiveRosterStudent,rosterPriority,normalize,esc,uid,today,dateISO,parseCSV,toCSV,series,number,docStatus,pending,metrics,isFinalYear,enrollmentSummary,month,migrateFrequency,monthlySummary,mergeStudentDatasets,validateEvents,deadline};
 })();
 </script>
 <script id="application">'use strict';
@@ -280,6 +434,7 @@ window.Edu = (() => {
  const pct=n=>n==null?'Não informado':n.toLocaleString('pt-BR',{maximumFractionDigits:1})+'%';
  const clone=v=>structuredClone(v);
  function validateDB(v){
+  if(v?.grades!==undefined)E.validateGrades(v.grades);
   if(v?.pendingImports!=null&&(!Array.isArray(v.pendingImports)||v.pendingImports.some(file=>
    !file||typeof file.id!=='string'||typeof file.file!=='string'||!['roster','frequency','enrollment','general'].includes(file.kind)||
    !Array.isArray(file.pending)||file.pending.some(row=>!row||!Number.isInteger(row._line)||row._line<1)
@@ -363,7 +518,7 @@ window.Edu = (() => {
   function showCloudGate(text){$('#cloud-gate').hidden=false;$('#cloud-login').hidden=!!cloudConflict;$('#cloud-conflict').hidden=!cloudConflict;if(text)cloudMessage(text);}
   function hideCloudGate(){ $('#cloud-gate').hidden=true;$('#cloud-login').hidden=false;$('#cloud-conflict').hidden=true; }
   function useLocalOnly(){cloudReady=false;cloudBlocked=false;hideCloudGate();render();cloudStatus('Modo local: alterações não sincronizadas.','error');}
-  function blankDB(v){return !v.students.length&&!v.charges.length&&!v.imports.length&&!(v.pendingImports||[]).length&&!Object.keys(v.calendars||{}).length&&!(v.calendarHistory||[]).length&&!v.enrollment;}
+  function blankDB(v){return !v.students.length&&!v.charges.length&&!v.imports.length&&!(v.pendingImports||[]).length&&!Object.keys(v.calendars||{}).length&&!(v.calendarHistory||[]).length&&!v.enrollment&&!(v.grades||[]).length;}
   function stableJSON(v){if(Array.isArray(v))return'['+v.map(stableJSON).join(',')+']';if(v&&typeof v==='object')return'{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+stableJSON(v[k])).join(',')+'}';return JSON.stringify(v);}
   async function hashDB(v){const text=stableJSON(v),bytes=new TextEncoder().encode(text);if(globalThis.crypto?.subtle){const hash=await crypto.subtle.digest('SHA-256',bytes);return [...new Uint8Array(hash)].map(x=>x.toString(16).padStart(2,'0')).join('');}let h=2166136261;for(const c of text)h=Math.imul(h^c.charCodeAt(0),16777619);return(h>>>0).toString(16);}
   function readCloudMeta(){try{return JSON.parse(localStorage.getItem(CLOUD_META)||'null');}catch{return null;}}
@@ -380,22 +535,41 @@ window.Edu = (() => {
    const current=new Set(snapshot.students.map(s=>s.id));
    const fields={},removedFields=[];
    for(const [key,value] of Object.entries(snapshot)){
-    if(key!=='students'&&stableJSON(base[key])!==stableJSON(value))fields[key]=value;
+    if(key!=='students'&&key!=='grades'&&stableJSON(base[key])!==stableJSON(value))fields[key]=value;
    }
-   for(const key of Object.keys(base))if(key!=='students'&&!Object.hasOwn(snapshot,key))removedFields.push(key);
+   for(const key of Object.keys(base))if(key!=='students'&&key!=='grades'&&!Object.hasOwn(snapshot,key))removedFields.push(key);
    return {
-    p_fields:fields,p_removed_fields:removedFields,
+    ...E.gradeDelta(base.grades,snapshot.grades),p_fields:fields,p_removed_fields:removedFields,
     p_students:snapshot.students.filter(s=>!previous.has(s.id)||stableJSON(previous.get(s.id))!==stableJSON(s)),
     p_removed_students:[...previous.keys()].filter(id=>!current.has(id))
    };
   }
-  async function fetchCloudRow(){const{data,error}=await cloudClient.from(CLOUD_TABLE).select('payload,revision,updated_at').eq('workspace_id',CLOUD_WORKSPACE).maybeSingle();if(error)throw error;return data;}
-  async function insertCloud(snapshot){const{data,error}=await cloudClient.from(CLOUD_TABLE).insert({workspace_id:CLOUD_WORKSPACE,payload:snapshot,revision:1,updated_by:cloudUser.id}).select('revision,updated_at').single();if(error)throw error;return data;}
+  async function fetchCloudRow(){
+   // Keep a complete local cache for offline use and complete backups; writes remain per record.
+   for(let attempt=0;attempt<3;attempt++){
+    const {data:row,error}=await cloudClient.from(CLOUD_TABLE).select('payload,revision,updated_at').eq('workspace_id',CLOUD_WORKSPACE).maybeSingle();if(error)throw error;if(!row)return null;
+    const grades=[];
+    for(let offset=0;;offset+=1000){
+     const {data,error}=await cloudClient.from('edu_grades').select('year,registration,discipline,t1,t2,t3,source_name,imported_at,edu_grade_enrollments!inner(name,class_group,call_number,pdf_name,pdf_group)').order('year').order('registration').order('discipline_key').range(offset,offset+999);
+     if(error)throw error;
+     for(const r of data){const e=r.edu_grade_enrollments;grades.push({year:r.year,registration:r.registration,discipline:r.discipline,name:e.name,group:e.class_group,notes:[r.t1,r.t2,r.t3],...(e.call_number!=null?{callNumber:e.call_number}:{}),...(e.pdf_name?{pdfName:e.pdf_name,pdfGroup:e.pdf_group}:{}),...(r.source_name?{source:r.source_name}:{}),...(r.imported_at?{importedAt:r.imported_at}:{})});}
+     if(data.length<1000)break;
+    }
+    const {data:latest,error:revisionError}=await cloudClient.from(CLOUD_TABLE).select('revision').eq('workspace_id',CLOUD_WORKSPACE).single();if(revisionError)throw revisionError;
+    if(Number(latest.revision)===Number(row.revision)){row.payload.grades=grades;return row;}
+   }
+   throw Error('A base foi atualizada durante a leitura. Tente sincronizar novamente.');
+  }
+  async function insertCloud(snapshot){
+   const payload=clone(snapshot);delete payload.grades;
+   const {data,error}=await cloudClient.from(CLOUD_TABLE).insert({workspace_id:CLOUD_WORKSPACE,payload,revision:1,updated_by:cloudUser.id}).select('revision,updated_at').single();if(error)throw error;
+   return snapshot.grades?.length?await updateCloud(snapshot,Number(data.revision),{...snapshot,grades:[]}):data;
+  }
   async function updateCloud(snapshot,expectedRevision,base=cloudBase){
    if(!base)throw Error('Sincronize o painel antes de enviar alterações.');
    const changes=cloudChanges(base,snapshot);
-   if(!Object.keys(changes.p_fields).length&&!changes.p_removed_fields.length&&!changes.p_students.length&&!changes.p_removed_students.length)return {revision:expectedRevision,updated_at:cloudUpdatedAt};
-   const {data,error}=await cloudClient.rpc('edu_analytics_patch_state',{
+   if(!Object.keys(changes.p_fields).length&&!changes.p_removed_fields.length&&!changes.p_students.length&&!changes.p_removed_students.length&&!changes.p_grades.length&&!changes.p_removed_grades.length)return {revision:expectedRevision,updated_at:cloudUpdatedAt};
+   const {data,error}=await cloudClient.rpc('edu_analytics_patch_v2',{
     p_expected_revision:expectedRevision,...changes
    }).maybeSingle();
    if(error?.code==='57014')throw Error('O Supabase demorou para concluir a gravação. Os dados estão neste navegador. Use Sincronizar agora para tentar novamente.');
@@ -548,13 +722,107 @@ window.Edu = (() => {
  }
  function table(rows){const ordered=sorted(rows),pages=Math.max(1,Math.ceil(ordered.length/30));page=Math.min(page,pages);return `<div class="countline"><span>${rows.length} de ${visibleRoster().length} alunos ${filters.alerts!==''?'· '+filters.alerts+' alerta(s)':''}</span>${pageControls(pages,'student-results','topo')}</div><div class="table-wrap student-grid" id="student-results"><table><thead><tr>${[['name','Aluno / matrícula'],['group','Turma'],['status','Situação'],['enrollment','Matrícula'],['frequency','Frequência'],['age','Idade no ano'],['distortion','Distorção'],['docs','Documentos'],['score','Risco']].map(([key,label])=>`<th scope="col"${key==='name'?' aria-sort="ascending"':''}>${label}</th>`).join('')}</tr></thead><tbody>${ordered.slice((page-1)*30,page*30).map(s=>{const m=dashboardMetric(s);return `<tr><td><button class="student-name" data-action="student" data-id="${h(s.id)}">${h(s.name||'Nome não informado')}</button><small>CGM ${h(s.registration||'não informado')}</small>${Object.entries(SUPPORT_LABELS).filter(([key])=>hasSupport(s,key)).map(([,label])=>`<span class="tag">${h(label)}</span>`).join('')}</td><td>${h(group(s))}${(s.specialCourses||[]).map(c=>`<small><span class="tag">${h(c)}</span></small>`).join('')}</td><td>${h(s.status||'Situação não informada')}</td><td><span class="tag ${enrollmentStatus(s)==='Confirmada'?'ok':'warning'}">${h(enrollmentStatus(s))}</span></td><td><span class="tag ${m.freqStatus==='Crítico'?'late':m.freqStatus==='Atenção'?'warning':m.freqStatus==='Regular'?'ok':''}">${pct(m.frequency)}</span><small>${m.freqStatus}${(filters.period||s.period)?' · '+h(filters.period||s.period):''}</small></td><td>${m.ageAtYear??'—'}<small>Ideal: ${m.ideal??'não informada'}</small></td><td>${m.distortion==null?'Não informada':m.distortion?'<span class="tag warning">Sim</span>':'Não'}</td><td>${m.docs.length?`<span class="tag warning">${m.docs.length} pendência(s)</span>`:'Sem pendência identificada'}${m.unknown.length?`<small>${m.unknown.length} não informado(s)</small>`:''}</td><td><b class="risk-score ${m.score>=70?'text-late':''}">${m.score}</b><small>${m.partial?'Parcial · dados ausentes':'de 100'}</small></td></tr>`;}).join('')||'<tr><td colspan="9" class="empty">Nenhum aluno corresponde aos filtros.</td></tr>'}</tbody></table></div>${pageControls(pages,'student-results','fim')}`;}
  function methodology(){return `<details class="methodology"><summary>Como os indicadores são calculados</summary><p>Frequência = (aulas dadas − faltas) ÷ aulas dadas × 100. Busca ativa abaixo de 75%; atenção de 75% a menos de 80%; regular a partir de 80%. Zero aulas e dados ausentes ficam sem classificação.</p><p>Distorção considera a idade completada no ano de referência, comparada à idade ideal da série (11 a 17 anos). Atraso de pelo menos 2 anos gera alerta. A idade atual também aparece no dossiê. Taxa calculada apenas sobre alunos com nascimento e série informados.</p><p>Score operacional, não oficial do MEC: 50 pontos para frequência abaixo de 75%, 25 entre 75% e 80%, 20 para distorção e 6 por documento pendente (até 30). Com dados ausentes, o score é parcial.</p><p><a href="https://download.inep.gov.br/publicacoes/institucionais/estatisticas_e_indicadores/dicionario_de_indicadores_educacionais_formulas_de_calculo.pdf" target="_blank" rel="noopener noreferrer">Referência metodológica do INEP</a>. Alertas apoiam o acompanhamento; não representam decisão de aprovação escolar.</p></details>`;}
+ let gradeFilters={group:'',discipline:'',level:'',search:''},gradeImport=null,gradePreview=null;
+ const GRADE_FIELDS=[['registration','CGM'],['name','Nome do estudante'],['group','Turma'],['discipline','Disciplina'],['t1','1º trimestre'],['t2','2º trimestre'],['t3','3º trimestre']];
+ const GRADE_ALIASES={registration:['CGM','MATRICULA','MATRICULA CGM'],name:['NOME','ESTUDANTE','ALUNO','NOME DO ESTUDANTE','NOME DO ALUNO'],group:['TURMA'],discipline:['DISCIPLINA','DISCIPLINAS','COMPONENTE CURRICULAR'],t1:['1 TRIMESTRE','1º TRIMESTRE','NOTA 1','NOTA DO 1º TRIMESTRE','T1'],t2:['2 TRIMESTRE','2º TRIMESTRE','NOTA 2','NOTA DO 2º TRIMESTRE','T2'],t3:['3 TRIMESTRE','3º TRIMESTRE','NOTA 3','NOTA DO 3º TRIMESTRE','T3']};
+ const gradeFormat=n=>n==null?'—':n.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+ const gradeYearRows=()=> (db.grades||[]).filter(r=>r.year===db.referenceYear);
+ function gradeSelection(){
+  const all=gradeYearRows(),selected=all.filter(r=>(!gradeFilters.group||r.group===gradeFilters.group)&&(!gradeFilters.discipline||E.normalize(r.discipline)===gradeFilters.discipline));
+  const subjects=[...new Map(selected.map(r=>[E.normalize(r.discipline),r.discipline])).entries()].sort((a,b)=>a[1].localeCompare(b[1],'pt-BR'));
+  const students=new Map();
+  for(const r of selected){if(!students.has(r.registration))students.set(r.registration,{registration:r.registration,name:r.name,group:r.group,grades:new Map()});students.get(r.registration).grades.set(E.normalize(r.discipline),r);}
+  const rows=[...students.values()].filter(s=>(!gradeFilters.search||E.normalize(s.name+' '+s.registration).includes(E.normalize(gradeFilters.search)))&&(!gradeFilters.level||subjects.some(([key])=>E.gradeSummary(s.grades.get(key)?.notes||[null,null,null]).level.key===gradeFilters.level))).sort((a,b)=>a.group.localeCompare(b.group,'pt-BR',{numeric:true})||a.name.localeCompare(b.name,'pt-BR'));
+  return {rows,subjects};
+ }
+ function gradeLegend(){return `<div class="grade-legend">${E.GRADE_LEVELS.map(l=>`<span class="grade-${l.key}"><b>${h(l.code)} · ${h(l.label)}</b>${l.range?' · '+h(l.range):''}</span>`).join('')}</div>`;}
+ function gradeMatrix(rows,subjects,printing=false){
+  return `<table class="grade-matrix" style="--grade-width:${Math.max(700,subjects.length*80+300)}px"><colgroup><col style="width:7%"><col style="width:20%">${subjects.map(()=>'<col>').join('')}</colgroup><thead><tr><th scope="col">CGM</th><th scope="col">Estudante / turma</th>${subjects.map(([key,name],i)=>`<th scope="col" title="${h(name)}">${printing?'D'+(i+1):h(name)}</th>`).join('')}</tr></thead><tbody>${rows.map(s=>`<tr><th scope="row">${h(s.registration)}</th><td>${h(s.name)}<small>${h(s.group)}</small></td>${subjects.map(([key])=>{
+   const record=s.grades.get(key),summary=E.gradeSummary(record?.notes||[null,null,null]);
+   const detail=record?'Notas: '+record.notes.map(gradeFormat).join(' / ')+' · '+summary.count+' de 3 trimestres':'Disciplina não importada para este estudante';
+   return `<td class="grade-${summary.level.key}" title="${h(summary.level.label+' · '+detail)}"><b>${gradeFormat(summary.mean)}</b><small>${h(summary.level.code)}${summary.count&&summary.count<3?' · '+summary.count+'/3':''}</small></td>`;
+  }).join('')}</tr>`).join('')||`<tr><td colspan="${subjects.length+2}" class="empty">Nenhum estudante neste recorte.</td></tr>`}</tbody></table>`;
+ }
+ function gradeMethod(){return '<p class="notes">Média de 0 a 10 calculada somente com notas disponíveis; zero conta como nota. Classificação antes do arredondamento. 1/3 e 2/3 indicam notas parciais. Sem notas não recebe conceito. A ausência de nota não comprova matrícula tardia.</p>';}
+ const PDF_SUBJECT_NAMES={'ARTE':'Arte','CIENCIAS':'Ciências','EDUCACAO FIS':'Educação Física','ENSINO RELIG':'Ensino Religioso','GEOGRAFIA':'Geografia','HISTORIA':'História','LINGUA INGLE':'Língua Inglesa','LINGUA PORTU':'Língua Portuguesa','MATEMATICA':'Matemática','LINGUA ESPAN':'Língua Espanhola'};
+ function renderGradePDFLinks(){
+  const report=gradeImport.pdf,subjects=report.students[0].subjects.map(s=>s.discipline);
+  $('#grades-mapping').innerHTML=`<h2>Conferir vínculos pelo CGM</h2><p>${h(report.group)} · ${report.year} · ${report.students.length} estudantes · ${subjects.length} disciplinas.</p><p class="notes">Confira nome, turma e chamada. Sugestões usam nome e turma; casos sem correspondência única ficam em branco. O número da chamada não substitui o CGM. Nenhum arquivo será armazenado.</p><datalist id="grade-roster">${db.students.filter(s=>s.registration).map(s=>`<option value="${h(s.registration)}">${h(s.name)} · ${h(group(s.schoolYears?.[report.year]||s))}</option>`).join('')}</datalist><form id="grades-pdf-links"><div class="table-wrap"><table><thead><tr><th>Chamada</th><th>Nome no PDF</th><th>CGM do cadastro</th><th>Conferência</th></tr></thead><tbody>${report.students.map(r=>{const reg=E.suggestGradeLink(r,report,db.students,db.grades||[]),student=db.students.find(s=>s.registration===reg);return `<tr><td>${r.callNumber}</td><td>${h(r.name)}</td><td><input aria-label="CGM da chamada ${r.callNumber}" data-grade-link="${r.callNumber}" list="grade-roster" value="${h(reg)}" placeholder="Digite ou selecione o CGM"><label class="check"><input type="checkbox" data-grade-skip="${r.callNumber}">Não importar</label></td><td data-grade-match="${r.callNumber}">${student?h(student.name)+' · '+h(group(student.schoolYears?.[report.year]||student)):'Vínculo pendente'}</td></tr>`;}).join('')}</tbody></table></div><details><summary>Conferir nomes das disciplinas</summary><div class="mapping-grid">${subjects.map((name,i)=>`<label>${h(name)}<input data-grade-subject="${i}" value="${h(PDF_SUBJECT_NAMES[E.normalize(name)]||name)}" maxlength="200" required></label>`).join('')}</div></details><button class="mt" type="submit">Conferir notas e vínculos</button></form><div id="grades-preview"></div>`;
+ }
+ function previewGradePDF(){
+  gradePreview=null;const incoming=[],used=new Set(),report=gradeImport.pdf,now=new Date().toISOString();
+  for(const row of report.students){
+   if($(`[data-grade-skip="${row.callNumber}"]`).checked)continue;
+   const reg=$(`[data-grade-link="${row.callNumber}"]`).value.trim(),student=db.students.find(s=>s.registration===reg);
+   if(!student)throw Error('Selecione um CGM válido para a chamada '+row.callNumber+' ou marque Não importar.');
+   if(used.has(reg))throw Error('O mesmo CGM foi vinculado a duas chamadas. Confira os vínculos.');used.add(reg);
+   const yearRecord=student.schoolYears?.[report.year]||student;
+   row.subjects.forEach((r,i)=>incoming.push({year:report.year,registration:reg,name:student.name,group:group(yearRecord),discipline:$(`[data-grade-subject="${i}"]`).value.trim(),notes:r.notes,callNumber:row.callNumber,pdfName:row.name,pdfGroup:report.group,source:gradeImport.file,importedAt:now}));
+  }
+  if(!incoming.length)throw Error('Selecione ao menos um estudante.');
+  setGradePreview(incoming);
+ }
+ function setGradePreview(incoming){
+  const result=E.mergeGrades(db.grades||[],incoming);gradePreview={...result,base:db,incoming};
+  const byKey=new Map(result.records.map(r=>[E.gradeKey(r),r]));
+  $('#grades-preview').innerHTML=`<h3 class="mt">${result.added} novos · ${result.updated} atualizações</h3><p>${new Set(incoming.map(r=>r.registration)).size} estudantes · ${incoming.length} registros · ano ${gradeImport.year}. Confira a amostra de até 10 registros antes de aplicar.</p><p class="notes">Campos vazios preservam notas já salvas. O arquivo original será descartado após a leitura; somente dados extraídos e identificação da origem são salvos.</p><div class="table-wrap"><table><thead><tr><th>CGM</th><th>Nome</th><th>Disciplina</th><th>Notas T1 / T2 / T3</th><th>Média / conceito</th></tr></thead><tbody>${incoming.slice(0,10).map(r=>{const saved=byKey.get(E.gradeKey(r)),m=E.gradeSummary(saved.notes);return `<tr><td>${h(r.registration)}</td><td>${h(r.name)}</td><td>${h(r.discipline)}</td><td>${saved.notes.map(gradeFormat).join(' / ')}</td><td>${gradeFormat(m.mean)} · ${h(m.level.label)}</td></tr>`;}).join('')}</tbody></table></div><button class="mt" data-action="grades-apply">Aplicar notas conferidas</button>`;
+ }
+ let dossierGradeYear=null,dossierGradeLevel='';
+ function individualGrades(student){
+  return (db.grades||[]).filter(r=>r.registration===student.registration&&r.year===dossierGradeYear).sort((a,b)=>E.GRADE_LEVELS.indexOf(E.gradeSummary(a.notes).level)-E.GRADE_LEVELS.indexOf(E.gradeSummary(b.notes).level)||(E.gradeSummary(a.notes).mean??11)-(E.gradeSummary(b.notes).mean??11)||a.discipline.localeCompare(b.discipline,'pt-BR'));
+ }
+ function individualGradeTable(records){return `<table class="individual-grades"><thead><tr><th scope="col">Disciplina</th><th scope="col">T1</th><th scope="col">T2</th><th scope="col">T3</th><th scope="col">Média</th><th scope="col">Conceito</th></tr></thead><tbody>${records.map(r=>{const m=E.gradeSummary(r.notes);return `<tr><th scope="row">${h(r.discipline)}</th>${r.notes.map(n=>`<td>${gradeFormat(n)}</td>`).join('')}<td>${gradeFormat(m.mean)}${m.count&&m.count<3?`<small>${m.count}/3 trimestres</small>`:''}</td><td class="grade-${m.level.key}">${h(m.level.label)}</td></tr>`;}).join('')||'<tr><td colspan="6">Nenhuma nota neste recorte.</td></tr>'}</tbody></table>`;}
+ function dossierGrades(student){
+  dossierGradeYear??=db.referenceYear;
+  const years=[...new Set([db.referenceYear,...(db.grades||[]).filter(r=>r.registration===student.registration).map(r=>r.year)])].sort((a,b)=>b-a),records=individualGrades(student),selected=records.filter(r=>!dossierGradeLevel||E.gradeSummary(r.notes).level.key===dossierGradeLevel);
+  return `<div class="toolbar"><label>Ano letivo<select id="dossier-grade-year">${years.map(y=>option(String(y),String(y),String(dossierGradeYear))).join('')}</select></label><button class="secondary" data-action="student-grades-pdf" ${records.length?'':'disabled'}>Exportar relatório individual</button></div><div class="actions"><button class="secondary" data-action="student-grade-filter" data-value="" aria-pressed="${!dossierGradeLevel}">Todas · ${records.length}</button>${E.GRADE_LEVELS.map(l=>`<button class="secondary grade-${l.key}" data-action="student-grade-filter" data-value="${l.key}" aria-pressed="${dossierGradeLevel===l.key}">${h(l.label)} · ${records.filter(r=>E.gradeSummary(r.notes).level.key===l.key).length}</button>`).join('')}</div><p class="notes">${records.length} disciplinas importadas. Disciplinas não importadas não entram na contagem.</p><div class="table-wrap">${individualGradeTable(selected)}</div>${gradeMethod()}<details><summary>Origem das notas</summary>${[...new Set(records.map(r=>r.source||'Importação anterior'))].map(source=>`<p class="notes">${h(source)}</p>`).join('')}<p class="notes">Os documentos originais não são armazenados.</p></details>`;
+ }
+ function printIndividualGrades(){
+  const student=byId(studentId),records=individualGrades(student).filter(r=>!dossierGradeLevel||E.gradeSummary(r.notes).level.key===dossierGradeLevel);
+  document.getElementById('grades-page-style')?.remove();
+  $('#print-area').innerHTML=`<section class="grade-individual-print"><h1>Se Liga! · Relatório individual</h1><p><b>${h(student.name)}</b> · CGM ${h(student.registration)}<br>${h(records[0]?.group||group(student.schoolYears?.[dossierGradeYear]||student))} · ${dossierGradeYear}</p><p>${records.length} disciplinas no recorte${dossierGradeLevel?' · '+h(E.GRADE_LEVELS.find(l=>l.key===dossierGradeLevel).label):''} · ${h(formatDate(E.today()))}</p>${individualGradeTable(records)}${gradeLegend()}${gradeMethod()}</section>`;
+  window.print();
+ }
+
+ function renderGrades(){
+  const all=gradeYearRows(),groups=[...new Set(all.map(r=>r.group))].sort(),disciplines=[...new Map(all.map(r=>[E.normalize(r.discipline),r.discipline])).entries()].sort((a,b)=>a[1].localeCompare(b[1],'pt-BR'));
+  const {rows,subjects}=gradeSelection();
+  $('#view').innerHTML=`<div class="heading"><div><h1>Se Liga!</h1><p>Conceitos por estudante e disciplina · ${db.referenceYear}</p></div><div class="actions"><button class="secondary" data-action="grades-csv" ${rows.length?'':'disabled'}>Exportar CSV</button><button class="secondary" data-action="grades-pdf" ${rows.length?'':'disabled'}>Exportar PDF</button></div></div><details class="panel" ${all.length?'':'open'}><summary>Importar notas de PDF ou planilha</summary><p>Envie o PDF de acompanhamento trimestral por turma ou uma planilha com uma linha por CGM e disciplina. Nome e turma podem vir do cadastro pelo CGM. Se o estudante não estiver cadastrado, informe ambos na planilha.</p><p class="notes">A importação usa o ano ${db.referenceYear}. Notas preenchidas atualizam aquele trimestre; campos vazios preservam notas já salvas. Outros anos e disciplinas são mantidos.</p><form id="grades-upload"><label>PDF trimestral ou planilha<input id="grades-file" type="file" accept=".pdf,.csv,.xlsx,.xls" required></label><div class="actions mt"><button type="submit">Ler e conferir colunas</button><button type="button" class="secondary" data-action="grades-template">Baixar modelo CSV</button></div></form><div id="grades-mapping"></div></details><div class="toolbar"><label>Buscar CGM ou nome<input id="grades-search" type="search" value="${h(gradeFilters.search)}"></label><label>Turma<select id="grades-group">${option('','Todas',gradeFilters.group)}${groups.map(g=>option(g,g,gradeFilters.group)).join('')}</select></label><label>Disciplina<select id="grades-discipline">${option('','Todas',gradeFilters.discipline)}${disciplines.map(([k,v])=>option(k,v,gradeFilters.discipline)).join('')}</select></label><label>Conceito<select id="grades-level">${option('','Todos',gradeFilters.level)}${E.GRADE_LEVELS.map(l=>option(l.key,l.label,gradeFilters.level)).join('')}</select></label><button class="secondary" data-action="grades-clear">Limpar filtros</button></div>${gradeLegend()}<p class="notes">${rows.length} estudantes · ${subjects.length} disciplinas. O filtro de conceito seleciona estudantes com pelo menos uma ocorrência nas disciplinas exibidas.</p><div class="table-wrap">${gradeMatrix(rows,subjects)}</div>${gradeMethod()}`;
+  if(gradeImport){if(gradeImport.pdf)renderGradePDFLinks();else renderGradeMapping();}
+ }
+ function renderGradeMapping(){
+  const header=gradeImport.sheets[gradeImport.sheet].rows[0]||[];
+  $('#grades-mapping').innerHTML=`<h2>Conferir colunas</h2><p>${h(gradeImport.file)} · ano ${gradeImport.year}. Use a primeira linha como cabeçalho.</p><label>Aba<select id="grades-sheet">${gradeImport.sheets.map((s,i)=>option(String(i),s.name,String(gradeImport.sheet))).join('')}</select></label><form id="grades-map"><div class="mapping-grid">${GRADE_FIELDS.map(([key,label])=>{const index=header.findIndex(v=>GRADE_ALIASES[key].includes(E.normalize(v)));return `<label>${h(label)}<select data-grade-map="${key}">${option('','Não importar',index<0?'':'none')}${header.map((v,i)=>option(String(i),String(v||'Coluna '+(i+1)),String(index))).join('')}</select></label>`;}).join('')}</div><button class="mt" type="submit">Conferir importação</button></form><div id="grades-preview"></div>`;
+ }
+ function previewGrades(){
+  gradePreview=null;
+  if(gradeImport.year!==db.referenceYear)throw Error('O ano mudou. Leia o arquivo novamente.');
+  const map=Object.fromEntries($$('[data-grade-map]').map(el=>[el.dataset.gradeMap,el.value===''?null:Number(el.value)]));
+  const incoming=E.parseGrades(gradeImport.sheets[gradeImport.sheet].rows.slice(1),map,gradeImport.year,studentsForReferenceYear());
+  setGradePreview(incoming.map(r=>({...r,source:gradeImport.file,importedAt:new Date().toISOString()})));
+ }
+ function exportGrades(){
+  const {rows,subjects}=gradeSelection();
+  download('se-liga-'+db.referenceYear+'.csv',E.toCSV([['Ano','CGM','Nome','Turma',...subjects.flatMap(([,name])=>[name+' · Média',name+' · Conceito',name+' · Trimestres'])],...rows.map(s=>[db.referenceYear,s.registration,s.name,s.group,...subjects.flatMap(([key])=>{const m=E.gradeSummary(s.grades.get(key)?.notes||[null,null,null]);return [m.mean===null?'':gradeFormat(m.mean),m.level.label,m.count];})])]));
+ }
+ function printGrades(){
+  const {rows,subjects}=gradeSelection(),chunks=[];
+  if(!rows.length)return;
+  for(let i=0;i<subjects.length;i+=15)chunks.push(subjects.slice(i,i+15));
+  const groups=[...new Set(rows.map(s=>s.group))],area=$('#print-area');
+  const recorte=[gradeFilters.search&&'Busca: '+gradeFilters.search,gradeFilters.level&&'Conceito: '+E.GRADE_LEVELS.find(l=>l.key===gradeFilters.level)?.label].filter(Boolean).join(' · ');
+  area.innerHTML=groups.flatMap(g=>chunks.map(subjects=>`<section class="grade-print"><h1>Se Liga! · ${h(g)} · ${db.referenceYear}</h1><p>${rows.filter(s=>s.group===g).length} estudantes${recorte?' · '+h(recorte):''} · Emitido em ${h(formatDate(E.today()))}</p>${gradeMatrix(rows.filter(s=>s.group===g),subjects,true)}${gradeLegend()}${gradeMethod()}<p class="grade-subjects">${subjects.map(([,name],i)=>'<b>D'+(i+1)+'</b> '+h(name)).join(' · ')}</p></section>`)).join('');
+  const style=document.createElement('style');style.id='grades-page-style';style.textContent='@page{size:A4 landscape;margin:10mm}';document.head.appendChild(style);
+  window.print();
+ }
+
  function render(){
-  route=location.hash.slice(1)||'painel';if(!['painel','alunos','frequencia','cobrancas','importar','calendario'].includes(route))route='painel';
+  route=location.hash.slice(1)||'painel';if(!['painel','alunos','frequencia','seliga','cobrancas','importar','calendario'].includes(route))route='painel';
   $$('nav a').forEach(a=>a.classList.toggle('active',a.hash==='#'+route));$('#reference-year').value=db.referenceYear;
   if(storageError){$('#persistent-warning').hidden=false;$('#persistent-warning').className='message';$('#persistent-warning').textContent=storageError;}
   if(route==='painel'||route==='alunos'){
    const rows=filtered();$('#view').innerHTML=`<div class="heading"><div><h1>${route==='painel'?'Visão geral':'Cruzamento de alunos'}</h1><p>Frequência, matrícula e pendências da escola.</p><p class="notes" id="dashboard-sync">${cloudUpdatedAt?'Última sincronização · '+h(new Date(cloudUpdatedAt).toLocaleString('pt-BR')):'Consulte o estado de sincronização na barra lateral.'}</p></div><div class="actions"><button class="secondary" data-action="export">Exportar CSV</button><button class="secondary" data-action="export-pdf">Exportar PDF</button><button data-action="go-import">Importar dados</button></div></div>${filterBar()}${route==='painel'?kpis(rows)+enrollmentPanel()+dashboardComparison(rows)+`<details class="dashboard-more"><summary>Indicadores complementares</summary>${charts(rows)}</details>`:''}<h2>Alunos no recorte</h2>${table(rows)}${methodology()}<p class="notes">Base inicial real: ${h(db.seedDescription||'relatórios fornecidos pelo usuário')}. Campos ausentes permanecem não informados.</p>`;
-  }else if(route==='frequencia')renderMonthly();else if(route==='importar')renderImport();else if(route==='calendario')renderCalendar();else renderCharges();
+  }else if(route==='seliga')renderGrades();else if(route==='frequencia')renderMonthly();else if(route==='importar')renderImport();else if(route==='calendario')renderCalendar();else renderCharges();
  }
  const monthLabel=p=>p?new Date(p+'-01T12:00:00').toLocaleDateString('pt-BR',{month:'long',year:'numeric'}):'Mês não selecionado';
  let monthlyFilters={search:'',group:'',first:'',second:'',scope:'any'};
@@ -1139,7 +1407,7 @@ window.Edu = (() => {
   let result={students:db.students,added:0,updated:0,conflicts:[]};result.reports=[];for(const report of reports){const part=E.mergeStudentDatasets(result.students,incoming.filter(r=>r._importId===report.id),report.file,importData.kind==='roster',report.id,true);result.students=part.students;result.added+=part.added;result.updated+=part.updated;result.conflicts.push(...part.conflicts);const invalid=issues.filter(i=>i.importId===report.id);result.conflicts.push(...invalid);result.reports.push({id:report.id,file:report.file,kind:importData.kind,added:part.added,updated:part.updated,skipped:part.conflicts.length+invalid.length});}mergePreview=result;
   $('#merge-result').innerHTML=`<h3 class="mt">Resultado da conferência</h3><p><b>${result.added}</b> novos · <b>${result.updated}</b> atualizados · <b>${result.conflicts.length}</b> registros não aplicados</p>${result.conflicts.length?`<details open><summary>Registros que exigem revisão</summary>${renderIssues(result.conflicts)}</details><label class="check"><input id="accept-partial" type="checkbox">Importar apenas os registros válidos; os demais serão ignorados.</label>`:''}<p class="notes">As cobranças e calendários existentes serão preservados. Nenhuma mudança foi gravada ainda.</p><button data-action="apply-import" ${result.added+result.updated===0?'disabled':''}>Aplicar cruzamento</button>`;$('#merge-result').scrollIntoView({block:'nearest'});
  }
- const DOSSIER_TABS={overview:'Resumo',attendance:'Frequência',documents:'Documentos e cobranças',support:'Apoio e trabalho',history:'Histórico'};
+ const DOSSIER_TABS={overview:'Resumo',performance:'Desempenho · Se Liga!',attendance:'Frequência',documents:'Documentos e cobranças',support:'Apoio e trabalho',history:'Histórico'};
  let dossierTab='overview',dossierMonths=[];
  function showDossierTab(tab){
   if(!Object.hasOwn(DOSSIER_TABS,tab))return;
@@ -1174,11 +1442,11 @@ window.Edu = (() => {
   return `<h3>Matrícula por ano letivo</h3><div class="table-wrap"><table><thead><tr><th scope="col">Ano</th><th scope="col">Turma</th><th scope="col">Situação</th><th scope="col">Data do relatório</th></tr></thead><tbody>${years.map(([year,record])=>`<tr><th scope="row">${h(year)}</th><td>${h(group(record))}</td><td>${h(record.status||'Não informada')}</td><td>${h(formatDate(record.rosterDate))}</td></tr>`).join('')}</tbody></table></div>`;
  }
  function openStudent(id){
-  if(studentId!==id||!$('#dossier').open){dossierTab='overview';dossierMonths=[];}
+  if(studentId!==id||!$('#dossier').open){dossierTab='overview';dossierMonths=[];dossierGradeYear=db.referenceYear;dossierGradeLevel='';}
   studentId=id;
   const s=byId(id);if(!s)return;
   const m=metric(s),charges=db.charges.filter(c=>c.studentId===id).sort((a,b)=>b.date.localeCompare(a.date));
-  $('#dossier-body').innerHTML=`<button class="close" data-action="close-student">Fechar</button><h2 id="dossier-title">${h(s.name||'Nome não informado')}</h2><p class="muted">CGM ${h(s.registration||'não informado')} · ${h(group(s))}</p><p class="muted">Telefone: <strong>${h(s.phone||"Não informado")}</strong></p><div class="dossier-identity"><span class="tag ${E.isActiveRosterStudent(s)?'ok':'warning'}">${h(s.status||'Situação não informada')}</span><span>Confirmação · <b>${h(enrollmentStatus(s))}</b>${db.enrollment?.importedAt?' · '+h(formatDate(db.enrollment.importedAt)):''}</span></div><div class="dossier-tabs" role="group" aria-label="Seções da ficha">${Object.entries(DOSSIER_TABS).map(([key,label])=>`<button class="secondary" data-action="dossier-tab" data-value="${key}" aria-pressed="false">${h(label)}</button>`).join('')}</div><section data-dossier-panel="overview">${dossierAttention(s,m,charges)}<div class="dossier-stats"><div><span>Frequência</span><strong>${pct(m.frequency)}</strong><small>${s.classes??'—'} aulas · ${s.absences??'—'} faltas ${s.period?'· '+h(s.period):''}</small></div><div><span>Idade / série</span><strong>${m.ageAtYear??'—'} anos em ${db.referenceYear}</strong><small>Atual: ${m.ageNow??'—'} · ideal: ${m.ideal??'—'} · ${m.distortion==null?'sem dados':m.distortion?'com distorção':'sem distorção'}</small></div><div><span>Score de acompanhamento</span><strong>${m.score} / 100</strong><small>${m.partial?'Parcial: há dados ausentes':'Dados informados'}</small></div></div></section><section data-dossier-panel="attendance" hidden>${dossierAttendance(s)}</section><section data-dossier-panel="support" hidden>${workStatusPanel(s,m)}${supportPanel(s)}<section class="panel"><h3>Cursos especiais</h3><p class="notes">Marque os cursos em que o estudante está matriculado. A alteração fica no histórico do cadastro.</p>${E.SPECIAL_COURSES.map((course,i)=>`<label class="check"><input type="checkbox" data-course-check="${i}" ${s.specialCourses?.includes(course)?'checked':''}>${h(course)}</label>`).join('')}</section></section><section data-dossier-panel="documents" hidden><h3 class="mt">Documentos</h3><p class="notes">Clique para registrar a entrega ou reabrir uma pendência. Toda mudança fica no histórico.</p><div class="document-list">${Object.entries(E.DOCS).map(([key,label])=>`<button class="doc-toggle secondary" data-action="toggle-doc" data-value="${key}"><span>${h(label)}</span><span class="tag ${m.docs.includes(key)?'warning':s.documents[key]==='ENTREGUE'?'ok':''}">${h(s.documents[key]||'NÃO INFORMADO')}</span></button>`).join('')}</div><div class="actions mt"><button class="secondary" data-action="print">Imprimir notificação aos pais / busca ativa</button></div><h3 class="mt">Registrar cobrança</h3><form id="charge-form"><div class="form-grid"><label>Data do contato<input id="charge-date" type="date" value="${E.today()}" max="${E.today()}" required></label><label>Meio de contato<select id="charge-channel">${['WhatsApp','Telefone','Presencial','E-mail','Outro'].map(v=>option(v,v,'')).join('')}</select></label><div class="full"><label>Documentos cobrados</label>${Object.entries(E.DOCS).map(([k,l])=>`<label class="check"><input type="checkbox" name="charge-document" value="${k}" ${m.docs.includes(k)?'checked':''}>${h(l)}</label>`).join('')}</div><label class="full">Retorno / observações<textarea id="charge-notes" maxlength="5000" placeholder="Registre o contato e o que foi combinado."></textarea></label></div><div id="deadline-preview"></div><button type="submit">Salvar cobrança</button></form><h3 class="mt">Histórico de cobranças</h3>${charges.map(chargeCard).join('')||'<p class="muted">Nenhuma cobrança registrada para este aluno.</p>'}</section><section data-dossier-panel="history" hidden>${schoolYearHistory(s)}<details class="mt" open><summary>Histórico de alterações e fontes (${s.history.length})</summary>${[...s.history].reverse().slice(0,40).map(x=>`<div class="audit"><b>${formatDate(x.date)} · ${h(x.source)}${x.page?' · Página '+x.page:x.line?' · Linha '+x.line:''}</b>${(x.changes||[]).map(c=>`<p>${h(c.field)}: ${h(c.before??'não informado')} → ${h(c.after??'não informado')}</p>`).join('')}</div>`).join('')||'<p class="notes">Dados da carga inicial. As próximas alterações serão registradas aqui.</p>'}<p class="notes">Fontes: ${h([...new Set(Object.values(s.sources||{}))].join('; '))}</p></details></section>`;
+  $('#dossier-body').innerHTML=`<button class="close" data-action="close-student">Fechar</button><h2 id="dossier-title">${h(s.name||'Nome não informado')}</h2><p class="muted">CGM ${h(s.registration||'não informado')} · ${h(group(s))}</p><p class="muted">Telefone: <strong>${h(s.phone||"Não informado")}</strong></p><div class="dossier-identity"><span class="tag ${E.isActiveRosterStudent(s)?'ok':'warning'}">${h(s.status||'Situação não informada')}</span><span>Confirmação · <b>${h(enrollmentStatus(s))}</b>${db.enrollment?.importedAt?' · '+h(formatDate(db.enrollment.importedAt)):''}</span></div><div class="dossier-tabs" role="group" aria-label="Seções da ficha">${Object.entries(DOSSIER_TABS).map(([key,label])=>`<button class="secondary" data-action="dossier-tab" data-value="${key}" aria-pressed="false">${h(label)}</button>`).join('')}</div><section data-dossier-panel="overview">${dossierAttention(s,m,charges)}<div class="dossier-stats"><div><span>Frequência</span><strong>${pct(m.frequency)}</strong><small>${s.classes??'—'} aulas · ${s.absences??'—'} faltas ${s.period?'· '+h(s.period):''}</small></div><div><span>Idade / série</span><strong>${m.ageAtYear??'—'} anos em ${db.referenceYear}</strong><small>Atual: ${m.ageNow??'—'} · ideal: ${m.ideal??'—'} · ${m.distortion==null?'sem dados':m.distortion?'com distorção':'sem distorção'}</small></div><div><span>Score de acompanhamento</span><strong>${m.score} / 100</strong><small>${m.partial?'Parcial: há dados ausentes':'Dados informados'}</small></div></div></section><section data-dossier-panel="performance" hidden>${dossierGrades(s)}</section><section data-dossier-panel="attendance" hidden>${dossierAttendance(s)}</section><section data-dossier-panel="support" hidden>${workStatusPanel(s,m)}${supportPanel(s)}<section class="panel"><h3>Cursos especiais</h3><p class="notes">Marque os cursos em que o estudante está matriculado. A alteração fica no histórico do cadastro.</p>${E.SPECIAL_COURSES.map((course,i)=>`<label class="check"><input type="checkbox" data-course-check="${i}" ${s.specialCourses?.includes(course)?'checked':''}>${h(course)}</label>`).join('')}</section></section><section data-dossier-panel="documents" hidden><h3 class="mt">Documentos</h3><p class="notes">Clique para registrar a entrega ou reabrir uma pendência. Toda mudança fica no histórico.</p><div class="document-list">${Object.entries(E.DOCS).map(([key,label])=>`<button class="doc-toggle secondary" data-action="toggle-doc" data-value="${key}"><span>${h(label)}</span><span class="tag ${m.docs.includes(key)?'warning':s.documents[key]==='ENTREGUE'?'ok':''}">${h(s.documents[key]||'NÃO INFORMADO')}</span></button>`).join('')}</div><div class="actions mt"><button class="secondary" data-action="print">Imprimir notificação aos pais / busca ativa</button></div><h3 class="mt">Registrar cobrança</h3><form id="charge-form"><div class="form-grid"><label>Data do contato<input id="charge-date" type="date" value="${E.today()}" max="${E.today()}" required></label><label>Meio de contato<select id="charge-channel">${['WhatsApp','Telefone','Presencial','E-mail','Outro'].map(v=>option(v,v,'')).join('')}</select></label><div class="full"><label>Documentos cobrados</label>${Object.entries(E.DOCS).map(([k,l])=>`<label class="check"><input type="checkbox" name="charge-document" value="${k}" ${m.docs.includes(k)?'checked':''}>${h(l)}</label>`).join('')}</div><label class="full">Retorno / observações<textarea id="charge-notes" maxlength="5000" placeholder="Registre o contato e o que foi combinado."></textarea></label></div><div id="deadline-preview"></div><button type="submit">Salvar cobrança</button></form><h3 class="mt">Histórico de cobranças</h3>${charges.map(chargeCard).join('')||'<p class="muted">Nenhuma cobrança registrada para este aluno.</p>'}</section><section data-dossier-panel="history" hidden>${schoolYearHistory(s)}<details class="mt" open><summary>Histórico de alterações e fontes (${s.history.length})</summary>${[...s.history].reverse().slice(0,40).map(x=>`<div class="audit"><b>${formatDate(x.date)} · ${h(x.source)}${x.page?' · Página '+x.page:x.line?' · Linha '+x.line:''}</b>${(x.changes||[]).map(c=>`<p>${h(c.field)}: ${h(c.before??'não informado')} → ${h(c.after??'não informado')}</p>`).join('')}</div>`).join('')||'<p class="notes">Dados da carga inicial. As próximas alterações serão registradas aqui.</p>'}<p class="notes">Fontes: ${h([...new Set(Object.values(s.sources||{}))].join('; '))}</p></details></section>`;
   if(!$('#dossier').open)$('#dossier').showModal();showDossierTab(dossierTab);updateDeadline();
  }
  function updateDeadline(){try{const d=E.deadline($('#charge-date').value,db.calendars);$('#deadline-preview').innerHTML=d.date?`<p class="message info">Prazo de 15 dias úteis: <b>${formatDate(d.date)}</b>. Férias e planejamento não suspendem a contagem.</p>`:`<p class="message">Calendário ${d.missing.join(', ')} não conferido. A cobrança pode ser salva, mas o vencimento ficará pendente até a ativação do calendário.</p>`;}catch(err){$('#deadline-preview').textContent=err.message;}}
@@ -1243,6 +1511,19 @@ window.Edu = (() => {
  function exportFiltered(){const headers=['Matrícula','Nome','Turma','Cursos especiais','Nascimento','Idade no ano','Aulas dadas','Faltas','Período','Frequência %','Situação frequência','Distorção','Pendências','Score','Score parcial','Confirmação de matrícula'];download('eduanalytics-recorte.csv',E.toCSV([headers,...sorted(filtered()).map(s=>{const m=dashboardMetric(s),record=filters.period?s.frequencies?.[filters.period]:s;return [s.registration,s.name,group(s),(s.specialCourses||[]).join(' | '),s.birth,m.ageAtYear,record?.classes,record?.absences,filters.period||s.period,m.frequency==null?'':m.frequency.toFixed(2).replace('.',','),m.freqStatus,m.distortion==null?'Não informado':m.distortion?'Sim':'Não',m.docs.map(k=>E.DOCS[k]).join(' | '),m.score,m.partial?'Sim':'Não',enrollmentStatus(s)];})]));}
  const templates={frequencia:['Matrícula','Nome','Turma','Mês','Aulas dadas','Faltas'],documentos:['Matrícula','Nome','RG/CPF','Certidão','Vacinação','Comprovante de residência','Histórico escolar'],cadastro:['Matrícula','Nome','Turma','Curso especial','Série','Data de nascimento'],calendario:['inicio','fim','tipo','descricao']};
  document.addEventListener('click',async event=>{const btn=event.target.closest('[data-action]');if(!btn)return;const a=btn.dataset.action,v=btn.dataset.value;try{
+  if(a==='student-grade-filter'){dossierGradeLevel=v;openStudent(studentId);return;}
+  if(a==='student-grades-pdf'){printIndividualGrades();return;}
+  if(a==='grades-template'){download('modelo-se-liga.csv',E.toCSV([GRADE_FIELDS.map(([,label])=>label)]));return;}
+  if(a==='grades-clear'){gradeFilters={group:'',discipline:'',level:'',search:''};render();return;}
+  if(a==='grades-csv'){exportGrades();return;}
+  if(a==='grades-pdf'){document.getElementById('grades-page-style')?.remove();printGrades();return;}
+  if(a==='grades-apply'){
+   if(!gradePreview||gradePreview.base!==db)throw Error('Confira novamente antes de aplicar. A base foi atualizada.');
+   btn.disabled=true;
+   try{const next=clone(db);next.grades=gradePreview.records;next.referenceYear=gradeImport.year;await save(next);gradeImport=null;gradePreview=null;render();notify('Notas salvas. Relatórios atualizados.');}finally{if(btn.isConnected)btn.disabled=false;}
+   return;
+  }
+
    if(a==='delete-import'){await deleteImportedReport(btn.dataset.id);return;}if(a==='cloud-sync'){await syncCloudNow();return;}if(a==='cloud-signout'){if(cloudClient)await cloudClient.auth.signOut();return;}if(a==='cloud-local-only'){useLocalOnly();return;}if(a==='cloud-auth-toggle'){setCloudAuthMode(cloudAuthMode==='signin'?'signup':'signin');return;}if(a==='cloud-use-cloud'){await useCloudVersion();return;}if(a==='cloud-use-local'){await useLocalVersion();return;}
   if(a==='batch-preview'){previewBatch();return;}
   if(a==='batch-apply'){await applyBatch(btn);return;}
@@ -1271,6 +1552,21 @@ window.Edu = (() => {
   if(a==='event-remove'){calendarDraft.events=readEvents();calendarDraft.events.splice(Number(v),1);drawCalendarEditor();return;}
  }catch(err){notify(err.message,true);}});
   document.addEventListener('submit',async event=>{event.preventDefault();const form=event.target,button=event.submitter;try{if(button)button.disabled=true;
+
+   if(form.id==='grades-upload'){
+    gradePreview=null;gradeImport=null;$('#grades-mapping').innerHTML='';
+    const file=$('#grades-file').files[0];if(!file)throw Error('Selecione uma planilha.');
+    const year=db.referenceYear;
+    if(file.name.toLowerCase().endsWith('.pdf')){
+     const pdf=E.parseGradePDF(await pdfPages(file));if(route!=='seliga')throw Error('Abra Se Liga! para conferir o PDF.');
+     gradeImport={file:file.name,pdf,year:pdf.year};$('#grades-file').value='';renderGradePDFLinks();return;
+    }
+    const sheets=await fileRows(file);
+    if(year!==db.referenceYear||route!=='seliga')throw Error('O ano ou a tela mudou. Leia o arquivo novamente.');
+    gradeImport={file:file.name,sheets,sheet:0,year};$('#grades-file').value='';renderGradeMapping();return;
+   }
+   if(form.id==='grades-pdf-links'){previewGradePDF();return;}
+   if(form.id==='grades-map'){previewGrades();return;}
    if(form.id==='cloud-login'){await requestCloudLogin();return;}
   if(form.id==='import-form'){const files=[...$('#data-file').files];if(!files.length)throw Error('Selecione um arquivo.');const kind=$('#import-kind').value,period=readImportMonth('import-period');if(files.length>1&&kind!=='roster')throw Error('A seleção de vários arquivos está disponível para relações de alunos por turma em PDF.');notify('Lendo o arquivo neste navegador…');if(kind==='roster'){let rows=null,reports=[],issues=[];for(const file of files){const parsed=await schoolPDF(file,kind),pageRows=parsed.sheets[0]?.rows||[];if(!rows)rows=[pageRows[0]||[]];else if(JSON.stringify(rows[0])!==JSON.stringify(pageRows[0]))throw Error('Os relatórios têm estruturas diferentes; importe-os separadamente.');const start=rows.length-1;rows.push(...pageRows.slice(1));reports.push({id:E.uid(),file:file.name,start,end:rows.length-1});issues.push(...parsed.issues.map(issue=>typeof issue==='string'?`${file.name}: ${issue}`:{...issue,reason:`${file.name}: ${issue.reason}`}));}importData={sheets:[{name:'PDF',rows}],issues,file:reports.length===1?reports[0].file:`${reports.length} PDFs: ${reports.map(r=>r.file).join(' · ')}`,files:reports,period,kind,sheet:0};}else{const file=files[0],result=['general','enrollment'].includes(kind)?{sheets:await fileRows(file),issues:[]}:await schoolPDF(file,kind);importData={...result,file:file.name,files:[{id:E.uid(),file:file.name,start:0,end:Infinity}],period,kind,sheet:0};}showMapping();}
   if(form.id==='mapping-form'){prepareMerge();if(mergePreview)mergePreview.base=db;}
@@ -1281,6 +1577,15 @@ window.Edu = (() => {
   if(form.id==='calendar-save'){const events=E.validateEvents(readEvents(),calendarDraft.year);if(!$('#calendar-reviewed').checked)throw Error('Confirme a conferência das datas.');const next=clone(db),old=next.calendars[calendarDraft.year];next.calendarHistory||=[];if(old)next.calendarHistory.push({date:new Date().toISOString(),calendar:old});next.calendars[calendarDraft.year]={year:calendarDraft.year,events,reviewed:true,source:calendarDraft.source,updated:new Date().toISOString()};await save(next);calendarDraft=null;render();notify('Calendário ativado. Prazos vigentes recalculados.');}
   }catch(err){if(form.id==='cloud-login'){const message='Não foi possível concluir o acesso: '+err.message;cloudMessage(message,'error');cloudStatus(message,'error');}else notify(err.message,true);}finally{if(button&&button.isConnected)button.disabled=false;}});
  document.addEventListener('change',async event=>{const el=event.target;try{
+   if(el.id==='dossier-grade-year'){dossierGradeYear=Number(el.value);dossierGradeLevel='';openStudent(studentId);return;}
+   if(el.matches('[data-grade-link],[data-grade-skip],[data-grade-subject]')){
+    gradePreview=null;$('#grades-preview').innerHTML='';
+    if(el.matches('[data-grade-link]')){const student=db.students.find(s=>s.registration===el.value.trim());$(`[data-grade-match="${el.dataset.gradeLink}"]`).textContent=student?student.name+' · '+group(student.schoolYears?.[gradeImport.year]||student):'CGM não encontrado';}return;
+   }
+   if(el.id==='grades-sheet'){gradeImport.sheet=Number(el.value);gradePreview=null;renderGradeMapping();return;}
+   if(el.matches('[data-grade-map]')){gradePreview=null;$('#grades-preview').innerHTML='';return;}
+   if(['grades-search','grades-group','grades-discipline','grades-level'].includes(el.id)){gradeFilters[el.id.slice(7)]=el.value;render();return;}
+
   if(el.matches('[data-dossier-month]')){dossierMonths[Number(el.dataset.dossierMonth)]=el.value;openStudent(studentId);return;}
   if(el.id==='batch-input'){await loadBatchFiles([...el.files]);return;}
   if(el.matches('[data-batch-field],[data-batch-map],[data-batch-link]')){await changeBatchField(el);return;}
@@ -1295,7 +1600,7 @@ window.Edu = (() => {
   if(el.id==='compare-first'||el.id==='compare-second'){monthlyFilters[el.id.slice(8)]=el.value;render();return;}
   if(el.id.startsWith('monthly-')){const key=el.id.slice(8);if(['first','second'].includes(key)){E.month(el.value);const other=key==='first'?'second':'first';if(el.value===monthlyFilters[other]){el.value=monthlyFilters[key];throw Error('Escolha dois meses diferentes.');}}monthlyFilters[key]=el.value;page=1;render();}
   if(el.id.startsWith('filter-')){filters[el.id.slice(7)]=el.value;page=1;render();}
-  if(el.id==='reference-year'){const n=Number(el.value);if(!Number.isInteger(n)||n<2000||n>2100)throw Error('Informe um ano entre 2000 e 2100.');const next=clone(db);next.referenceYear=n;await save(next);render();}
+  if(el.id==='reference-year'){const n=Number(el.value);if(!Number.isInteger(n)||n<2000||n>2100)throw Error('Informe um ano entre 2000 e 2100.');const next=clone(db);next.referenceYear=n;await save(next);gradeImport=null;gradePreview=null;gradeFilters={group:'',discipline:'',level:'',search:''};render();}
   if(el.id==='charge-date')updateDeadline();
   if(el.id==='map-kind'){importData.kind=el.value;importData.kindChosen=true;mergePreview=null;showMapping(false);}
   if(el.id==='map-sheet'){importData.sheet=Number(el.value);showMapping();}if(el.id==='map-header'){const n=Number(el.value);if(!Number.isInteger(n)||n<1||n>30)throw Error('Cabeçalho inválido.');importData.header=n-1;showMapping(false);mergePreview=null;}
@@ -1332,7 +1637,7 @@ window.Edu = (() => {
  document.addEventListener('compositionend',event=>{
   if(isStudentSearch(event.target))scheduleStudentSearch(event.target);
  });
- window.addEventListener('hashchange',()=>{page=1;render();});window.addEventListener('afterprint',()=>document.body.classList.remove('printing'));
+ window.addEventListener('hashchange',()=>{page=1;render();});window.addEventListener('afterprint',()=>{document.body.classList.remove('printing');document.getElementById('grades-page-style')?.remove();});
   window.addEventListener('online',()=>syncCloudNow());
   db=clone(seed);load().then(()=>{render();initializeCloud();});window.EduApp={getState:()=>clone(db),validateDB};
 })();

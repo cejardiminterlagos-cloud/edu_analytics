@@ -1,0 +1,40 @@
+const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert/strict');
+(async()=>{
+ const html=fs.readFileSync(path.resolve(__dirname,'../index.html'),'utf8');global.window={};vm.runInThisContext(html.match(/<script id="engine">([\s\S]*?)<\/script>/)[1]);const E=window.Edu;
+ const pdf=E.parseGradePDF(JSON.parse(fs.readFileSync(path.resolve(__dirname,'../../tmp/seliga/pdf-words.json'),'utf8')));
+ assert.equal(pdf.students.length,35);assert.equal(pdf.students[0].subjects.length,12);
+ const seed=JSON.parse(html.match(/<script id="initial-data" type="application\/json">([\s\S]*?)<\/script>/)[1]);
+ seed.students=pdf.students.map((s,i)=>({id:'test-'+i,registration:String(i+1).padStart(8,'0'),name:s.name,group:'6º Ano A',series:'6EF',shift:'Tarde',status:'MATRICULADO',rosterStudent:true,documents:{},history:[],sources:{}}));
+ const b=await chromium.launch({headless:true,executablePath:process.env.EDGE_PATH||'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'});
+ try{
+ const context=await b.newContext({viewport:{width:1440,height:1000},acceptDownloads:true});const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.route('https://**',r=>r.abort());
+ await page.addInitScript(seed=>{localStorage.setItem('eduanalytics_db_v1',JSON.stringify(seed));window.print=()=>{window.printCalled=true;};},seed);
+ await page.goto('file:///'+path.resolve(__dirname,'../index.html').replaceAll('\\','/')+'#seliga');await page.getByRole('heading',{name:'Se Liga!',exact:true}).waitFor();
+ if(await page.locator('#cloud-gate').isVisible())await page.locator('[data-action="cloud-local-only"]').click();
+ await page.addScriptTag({path:path.resolve(__dirname,'../../tmp/pdf.min.js')});await page.addScriptTag({path:path.resolve(__dirname,'../../tmp/pdf.worker.min.js')});
+ await page.locator('#grades-file').setInputFiles(process.env.GRADE_PDF||'C:/Users/Bruno/Downloads/6apdf.pdf');
+ await page.getByRole('button',{name:'Ler e conferir colunas',exact:true}).click();await page.locator('#grades-pdf-links').waitFor();
+ assert.equal(await page.locator('[data-grade-link]').count(),35);assert.equal(await page.locator('[data-grade-link="2"]').inputValue(),'00000002');
+ await page.locator('[data-grade-link="2"]').fill('');await page.locator('[data-grade-link="2"]').dispatchEvent('change');
+ await page.getByRole('button',{name:'Conferir notas e vínculos'}).click();assert.match(await page.locator('#notice').innerText(),/chamada 2/);
+ await page.locator('[data-grade-link="2"]').fill('00000002');await page.locator('[data-grade-link="2"]').dispatchEvent('change');
+ await page.getByRole('button',{name:'Conferir notas e vínculos'}).click();assert.match(await page.locator('#grades-preview').innerText(),/420 novos/);
+ await page.getByRole('button',{name:'Aplicar notas conferidas'}).click();await page.waitForFunction(()=>EduApp.getState().grades?.length===420);
+ assert.deepEqual(await page.evaluate(()=>EduApp.getState().grades.find(r=>r.registration==='00000002'&&r.discipline==='Arte').notes),[6.5,7.5,null]);
+ assert.equal(await page.evaluate(()=>EduApp.getState().grades.some(r=>r.file||r.blob||r.raw)),false);
+ await page.getByRole('link',{name:'Cruzamento de alunos',exact:true}).click();await page.locator('.student-name').filter({hasText:pdf.students[1].name}).click();
+ await page.getByRole('button',{name:'Desempenho · Se Liga!',exact:true}).click();
+ assert.equal(await page.locator('#dossier .individual-grades tbody tr').count(),12);
+ await page.locator('[data-action="student-grade-filter"][data-value="adequate"]').click();
+ assert(await page.locator('#dossier .individual-grades tbody tr').count()<12);
+ await page.getByRole('button',{name:'Exportar relatório individual'}).click();assert.equal(await page.evaluate(()=>window.printCalled),true);
+ assert.match(await page.locator('#print-area').innerText(),/00000002/);assert.match(await page.locator('#print-area').innerText(),/Adequado/);
+ await page.emulateMedia({media:'print'});await page.pdf({path:path.resolve(__dirname,'../../tmp/seliga/individual-test.pdf'),preferCSSPageSize:true,printBackground:true});await page.emulateMedia({media:'screen'});
+ await page.locator('[data-action="student-grade-filter"][data-value=""]').click();
+ await page.screenshot({path:path.resolve(__dirname,'../../tmp/seliga/individual-test.png')});
+ await page.getByRole('button',{name:'Fechar',exact:true}).click();await page.getByRole('link',{name:'Se Liga!',exact:true}).click();
+ assert.equal(await page.locator('#view .grade-matrix tbody tr').count(),35);
+ assert.deepEqual(errors,[]);console.log('PASS: real PDF 35 x 12 extraction, CGM review, application, no original files, individual dossier and PDF.');
+ }finally{await b.close();}
+})().catch(e=>{console.error(e);process.exit(1)});
