@@ -18,6 +18,7 @@
 
 .conflict-detail{margin:18px 0;padding-top:12px;border-top:1px solid var(--border)}.conflict-detail h4{margin:0 0 10px;font-size:14px}.conflict-detail table{min-width:500px}.conflict-difference td,.conflict-difference th{background:#fff3dc}.conflict-detail td{white-space:pre-wrap;overflow-wrap:anywhere}
 @media print{#print-area .oficio-report{width:100%;table-layout:fixed;border-collapse:collapse;font:9pt Arial,sans-serif}#print-area .oficio-report thead{display:table-header-group}#print-area .oficio-report tr{break-inside:avoid}#print-area .oficio-report th,#print-area .oficio-report td{border:1px solid #777;padding:5px;overflow-wrap:anywhere;vertical-align:middle}#print-area .oficio-report .oficio-heading{border:0;text-align:center;padding:0 0 8mm}#print-area .oficio-heading img{width:17.7mm;height:21.2mm;display:block;margin:0 auto 4mm}#print-area .oficio-heading h1{font-size:14pt;margin:0}#print-area .oficio-heading p{margin:2mm 0 0}#print-area .oficio-distortion th:nth-child(1){width:15%}#print-area .oficio-distortion th:nth-child(2){width:28%}#print-area .oficio-distortion th:nth-child(3){width:13%}#print-area .oficio-distortion th:nth-child(4){width:17%}#print-area .oficio-distortion td{height:9mm}}
+ #dossier .manual-grade-table{min-width:640px;width:100%;table-layout:fixed}#dossier .manual-grade-table th,#dossier .manual-grade-table td{padding:6px;white-space:normal;vertical-align:middle;overflow-wrap:anywhere}#dossier .manual-grade-table th:first-child{width:26%}#dossier .manual-grade-table th:nth-child(n+2):nth-child(-n+4){width:14%}#dossier .manual-grade-table th:nth-child(5){width:12%}.manual-grade-table input[data-manual-note]{width:100%;margin:0;padding:4px;text-align:center;font-variant-numeric:tabular-nums}.manual-grade-table .check{font-size:10px;margin:3px 0 0;gap:4px}.manual-grade-table td[data-manual-mean]{font-weight:600}
 </style>
 <style id="cloud-styles">.cloud-gate{position:fixed;inset:0;z-index:10000;display:grid;place-items:center;padding:20px;background:#f4f5f0}.cloud-gate[hidden]{display:none}.cloud-card{width:min(520px,100%);padding:28px;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 18px 60px #15251a22}.cloud-card h1{margin:0 0 10px;font-size:24px}.cloud-card p{color:var(--muted);line-height:1.5}.cloud-card form{display:grid;gap:12px}.cloud-card input{width:100%;padding:10px;border:1px solid var(--border);border-radius:6px}.cloud-card .cloud-message{min-height:24px;margin-bottom:0}.cloud-card .cloud-message[data-state="error"]{color:#a52b1d}.cloud-card .cloud-message[data-state="pending"]{color:#80540d}.cloud-card .cloud-actions{display:flex;gap:10px;flex-wrap:wrap}.cloud-status{font-size:12px;line-height:1.4;color:var(--muted)}.cloud-status[data-state="ok"]{color:#215d49}.cloud-status[data-state="error"]{color:#a52b1d}.cloud-status[data-state="pending"]{color:#80540d}</style>
 <style id="eduanalytics-v2">
@@ -779,29 +780,45 @@ window.Edu = (() => {
   return `<div class="toolbar"><label>Ano letivo<select id="dossier-grade-year">${years.map(y=>option(String(y),String(y),String(dossierGradeYear))).join('')}</select></label><button class="secondary" data-action="student-grades-pdf" ${records.length?'':'disabled'}>Exportar relatório individual</button></div><div class="actions"><button class="secondary" data-action="student-grade-filter" data-value="" aria-pressed="${!dossierGradeLevel}">Todas · ${records.length}</button>${E.GRADE_LEVELS.map(l=>`<button class="secondary grade-${l.key}" data-action="student-grade-filter" data-value="${l.key}" aria-pressed="${dossierGradeLevel===l.key}">${h(l.label)} · ${records.filter(r=>E.gradeSummary(r.notes).level.key===l.key).length}</button>`).join('')}</div><p class="notes">${records.length} disciplinas registradas. Disciplinas sem registro não entram na contagem.</p><div class="table-wrap">${individualGradeTable(selected)}</div>${manualGradeForm(student)}${gradeMethod()}<details><summary>Origem das notas</summary>${[...new Set(records.map(r=>r.source||'Importação anterior'))].map(source=>`<p class="notes">${h(source)}</p>`).join('')}<p class="notes">Os documentos originais não são armazenados.</p></details>`;
  }
  let manualGradeBase=null;
+ function manualGradeRow(discipline,record){
+  const notes=record?.notes||[null,null,null],m=E.gradeSummary(notes);
+  return `<tr data-manual-discipline="${h(discipline)}"><th scope="row">${h(discipline)}</th>${notes.map((n,i)=>`<td><input data-manual-note="${i}" aria-label="${h(discipline)} · ${i+1}º trimestre" inputmode="decimal" value="${n??''}" placeholder="—" maxlength="10"><label class="check"><input type="checkbox" data-manual-lock="${i}" aria-label="Preservar ${h(discipline)} · T${i+1} nas importações" ${record?.manual?.[i]?'checked':''}>Preservar</label></td>`).join('')}<td data-manual-mean>${gradeFormat(m.mean)}</td><td data-manual-concept class="grade-${m.level.key}">${h(m.level.label)}</td></tr>`;
+ }
  function manualGradeForm(student){
   manualGradeBase=db;
-  const subjects=[...new Map((db.grades||[]).filter(r=>r.year===dossierGradeYear).map(r=>[E.normalize(r.discipline),r.discipline])).values()].sort((a,b)=>a.localeCompare(b,'pt-BR'));
-  return `<details class="panel mt" id="manual-grade-editor"><summary>Lançar ou corrigir notas</summary><p>Ano ${dossierGradeYear} · CGM ${h(student.registration)}. Informe notas de 0 a 10. Zero entra na média; vazio significa sem nota, nunca zero por falta de frequência.</p><form id="manual-grade-form"><label>Disciplina<input id="manual-grade-discipline" list="manual-grade-subjects" maxlength="200" required placeholder="Selecione ou digite a disciplina"></label><datalist id="manual-grade-subjects">${subjects.map(d=>`<option value="${h(d)}"></option>`).join('')}</datalist><div class="form-grid mt">${[0,1,2].map(i=>`<div><label>${i+1}º trimestre<input data-manual-note="${i}" inputmode="decimal" placeholder="Sem nota" maxlength="10"></label><label class="check"><input type="checkbox" data-manual-lock="${i}">Preservar T${i+1} nas importações</label></div>`).join('')}</div><p class="notes">Alterar uma nota ativa a proteção desse trimestre. Desmarque para permitir que futuras importações o atualizem. Apagar uma nota retira esse trimestre da média.</p><label>Motivo do lançamento ou correção<textarea id="manual-grade-reason" maxlength="500" required placeholder="Ex.: estudante ausente do PDF; notas conferidas no registro escolar."></textarea></label><button class="mt" type="submit">Salvar notas manuais</button></form></details>`;
+  const records=individualGrades(student),classGroup=records[0]?.group||group(student.schoolYears?.[dossierGradeYear]||student);
+  const subjects=[...new Map((db.grades||[]).filter(r=>r.year===dossierGradeYear&&(r.registration===student.registration||E.normalize(r.group)===E.normalize(classGroup))).map(r=>[E.normalize(r.discipline),r.discipline])).values()].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  return `<details class="panel mt" id="manual-grade-editor"><summary>Lançar ou corrigir notas</summary><p>Ano ${dossierGradeYear} · CGM ${h(student.registration)}. Edite as notas na tabela e salve todas as alterações juntas. Zero entra na média; vazio significa sem nota.</p><form id="manual-grade-form"><div class="table-wrap"><table class="manual-grade-table"><thead><tr><th scope="col">Disciplina</th><th scope="col">1º trimestre</th><th scope="col">2º trimestre</th><th scope="col">3º trimestre</th><th scope="col">Média</th><th scope="col">Conceito</th></tr></thead><tbody id="manual-grade-rows">${subjects.map(d=>manualGradeRow(d,records.find(r=>E.normalize(r.discipline)===E.normalize(d)))).join('')}</tbody></table></div><div class="actions mt"><label>Adicionar disciplina<input id="manual-grade-discipline" maxlength="200" placeholder="Nome da disciplina"></label><button type="button" class="secondary" data-action="manual-grade-add">Adicionar à tabela</button></div><p class="notes">Média e conceito são uma prévia até salvar. Disciplinas da turma sem notas ficam em branco. Alterar uma nota ativa “Preservar” nesse trimestre; desmarque para permitir futuras importações. Apagar uma nota retira esse trimestre da média.</p><label>Motivo do lançamento ou correção<textarea id="manual-grade-reason" maxlength="500" required placeholder="Ex.: notas conferidas no registro escolar."></textarea></label><button class="mt" type="submit">Salvar notas manuais</button></form></details>`;
  }
- function loadManualGrade(){
-  const record=individualGrades(byId(studentId)).find(r=>E.normalize(r.discipline)===E.normalize($('#manual-grade-discipline').value));
-  for(let i=0;i<3;i++){$(`[data-manual-note="${i}"]`).value=record?.notes[i]??'';$(`[data-manual-lock="${i}"]`).checked=record?.manual?.[i]||false;}
+ function addManualGrade(){
+  const input=$('#manual-grade-discipline'),discipline=input.value.trim();
+  if(!discipline||discipline.length>200)throw Error('Informe o nome da disciplina.');
+  const existing=$$('[data-manual-discipline]').find(row=>E.normalize(row.dataset.manualDiscipline)===E.normalize(discipline));
+  if(existing){existing.querySelector('[data-manual-note]').focus();return;}
+  $('#manual-grade-rows').insertAdjacentHTML('beforeend',manualGradeRow(discipline));input.value='';$('#manual-grade-rows tr:last-child [data-manual-note]').focus();
+ }
+ function previewManualGrade(input){
+  const row=input.closest('[data-manual-discipline]'),mean=row.querySelector('[data-manual-mean]'),concept=row.querySelector('[data-manual-concept]');
+  row.querySelector(`[data-manual-lock="${input.dataset.manualNote}"]`).checked=true;
+  try{const m=E.gradeSummary([...row.querySelectorAll('[data-manual-note]')].map(el=>el.value));mean.textContent=gradeFormat(m.mean);concept.textContent=m.level.label;concept.className='grade-'+m.level.key;}
+  catch{mean.textContent='—';concept.textContent='Confira as notas (0 a 10)';concept.className='grade-below';}
  }
  async function saveManualGrade(){
   if(manualGradeBase!==db)throw Error('A base mudou. Reabra a ficha antes de corrigir notas.');
-  const next=clone(db),student=next.students.find(s=>s.id===studentId),discipline=$('#manual-grade-discipline').value.trim(),reason=$('#manual-grade-reason').value.trim();
-  if(!discipline||!reason||reason.length>500)throw Error('Informe a disciplina e o motivo da correção.');
-  const notes=[0,1,2].map(i=>E.gradeNumber($(`[data-manual-note="${i}"]`).value)),manual=[0,1,2].map(i=>$(`[data-manual-lock="${i}"]`).checked),year=dossierGradeYear;
-  const old=(next.grades||[]).find(r=>r.year===year&&r.registration===student.registration&&E.normalize(r.discipline)===E.normalize(discipline));
-  if(!old&&notes.every(n=>n===null))throw Error('Informe ao menos uma nota para cadastrar a disciplina.');
-  const record={...old,year,registration:student.registration,name:student.name,group:group(student.schoolYears?.[year]||student),discipline:old?.discipline||discipline,notes,manual,source:'Lançamento manual',importedAt:new Date().toISOString()};
-  E.validateGrades([record]);
-  next.grades=E.mergeGrades(next.grades||[],[record]).records.map(r=>E.gradeKey(r)===E.gradeKey(record)?record:r);
-  E.validateGrades(next.grades);
-  const changes=notes.flatMap((n,i)=>{const out=[];if((old?.notes[i]??null)!==n)out.push({field:`${year} · ${record.discipline} · T${i+1}`,before:old?.notes[i]??null,after:n});if((old?.manual?.[i]||false)!==manual[i])out.push({field:`${year} · ${record.discipline} · Proteção T${i+1}`,before:old?.manual?.[i]||false,after:manual[i]});return out;});
-  if(!changes.length)throw Error('Nenhuma nota ou proteção foi alterada.');
-  student.history.push({date:record.importedAt,source:'Lançamento manual de notas',changes:[...changes,{field:'Motivo',before:null,after:reason}]});
+  const next=clone(db),student=next.students.find(s=>s.id===studentId),reason=$('#manual-grade-reason').value.trim(),year=dossierGradeYear,now=new Date().toISOString(),updates=[],changes=[];
+  if(!reason||reason.length>500)throw Error('Informe o motivo da correção.');
+  for(const row of $$('[data-manual-discipline]')){
+   const discipline=row.dataset.manualDiscipline,notes=[...row.querySelectorAll('[data-manual-note]')].map(el=>E.gradeNumber(el.value)),manual=[...row.querySelectorAll('[data-manual-lock]')].map(el=>el.checked);
+   const old=(next.grades||[]).find(r=>r.year===year&&r.registration===student.registration&&E.normalize(r.discipline)===E.normalize(discipline));
+   if(!old&&notes.every(n=>n===null))continue;
+   const delta=notes.flatMap((n,i)=>{const out=[];if((old?.notes[i]??null)!==n)out.push({field:`${year} · ${discipline} · T${i+1}`,before:old?.notes[i]??null,after:n});if((old?.manual?.[i]||false)!==manual[i])out.push({field:`${year} · ${discipline} · Proteção T${i+1}`,before:old?.manual?.[i]||false,after:manual[i]});return out;});
+   if(!delta.length)continue;
+   changes.push(...delta);updates.push({...old,year,registration:student.registration,name:student.name,group:group(student.schoolYears?.[year]||student),discipline:old?.discipline||discipline,notes,manual,source:'Lançamento manual',importedAt:now});
+  }
+  if(!updates.length)throw Error('Nenhuma nota ou proteção foi alterada.');
+  const byKey=new Map(updates.map(r=>[E.gradeKey(r),r]));
+  next.grades=E.mergeGrades(next.grades||[],updates).records.map(r=>byKey.get(E.gradeKey(r))||r);E.validateGrades(next.grades);
+  student.history.push({date:now,source:'Lançamento manual de notas',changes:[...changes,{field:'Motivo',before:null,after:reason}]});
   await save(next);dossierGradeLevel='';openStudent(studentId);render();notify('Notas salvas. Médias, conceitos e relatórios atualizados.');
  }
  function printIndividualGrades(){
@@ -1551,6 +1568,7 @@ window.Edu = (() => {
  function exportFiltered(){const headers=['Matrícula','Nome','Turma','Cursos especiais','Nascimento','Idade no ano','Aulas dadas','Faltas','Período','Frequência %','Situação frequência','Distorção','Pendências','Score','Score parcial','Confirmação de matrícula'];download('eduanalytics-recorte.csv',E.toCSV([headers,...sorted(filtered()).map(s=>{const m=dashboardMetric(s),record=filters.period?s.frequencies?.[filters.period]:s;return [s.registration,s.name,group(s),(s.specialCourses||[]).join(' | '),s.birth,m.ageAtYear,record?.classes,record?.absences,filters.period||s.period,m.frequency==null?'':m.frequency.toFixed(2).replace('.',','),m.freqStatus,m.distortion==null?'Não informado':m.distortion?'Sim':'Não',m.docs.map(k=>E.DOCS[k]).join(' | '),m.score,m.partial?'Sim':'Não',enrollmentStatus(s)];})]));}
  const templates={frequencia:['Matrícula','Nome','Turma','Mês','Aulas dadas','Faltas'],documentos:['Matrícula','Nome','RG/CPF','Certidão','Vacinação','Comprovante de residência','Histórico escolar'],cadastro:['Matrícula','Nome','Turma','Curso especial','Série','Data de nascimento'],calendario:['inicio','fim','tipo','descricao']};
  document.addEventListener('click',async event=>{const btn=event.target.closest('[data-action]');if(!btn)return;const a=btn.dataset.action,v=btn.dataset.value;try{
+  if(a==='manual-grade-add'){addManualGrade();return;}
   if(a==='student-grade-filter'){dossierGradeLevel=v;openStudent(studentId);return;}
   if(a==='student-grades-pdf'){printIndividualGrades();return;}
   if(a==='grades-template'){download('modelo-se-liga.csv',E.toCSV([GRADE_FIELDS.map(([,label])=>label)]));return;}
@@ -1619,8 +1637,6 @@ window.Edu = (() => {
   if(form.id==='calendar-save'){const events=E.validateEvents(readEvents(),calendarDraft.year);if(!$('#calendar-reviewed').checked)throw Error('Confirme a conferência das datas.');const next=clone(db),old=next.calendars[calendarDraft.year];next.calendarHistory||=[];if(old)next.calendarHistory.push({date:new Date().toISOString(),calendar:old});next.calendars[calendarDraft.year]={year:calendarDraft.year,events,reviewed:true,source:calendarDraft.source,updated:new Date().toISOString()};await save(next);calendarDraft=null;render();notify('Calendário ativado. Prazos vigentes recalculados.');}
   }catch(err){if(form.id==='cloud-login'){const message='Não foi possível concluir o acesso: '+err.message;cloudMessage(message,'error');cloudStatus(message,'error');}else notify(err.message,true);}finally{if(button&&button.isConnected)button.disabled=false;}});
  document.addEventListener('change',async event=>{const el=event.target;try{
-   if(el.id==='manual-grade-discipline'){loadManualGrade();return;}
-   if(el.matches('[data-manual-note]')){$(`[data-manual-lock="${el.dataset.manualNote}"]`).checked=true;return;}
    if(el.id==='dossier-grade-year'){dossierGradeYear=Number(el.value);dossierGradeLevel='';openStudent(studentId);return;}
    if(el.matches('[data-grade-link],[data-grade-skip],[data-grade-subject]')){
     gradePreview=null;$('#grades-preview').innerHTML='';
@@ -1673,6 +1689,7 @@ window.Edu = (() => {
   },220);
  }
  document.addEventListener('input',event=>{
+  if(event.target.matches('[data-manual-note]')){previewManualGrade(event.target);return;}
   if(isStudentSearch(event.target)&&!event.isComposing)scheduleStudentSearch(event.target);
  });
  document.addEventListener('compositionstart',event=>{

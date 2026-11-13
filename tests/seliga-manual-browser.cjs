@@ -9,7 +9,7 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
   await p.goto('file:///'+path.resolve(__dirname,'../index.html').replaceAll('\\','/')+'#alunos');
   if(await p.locator('#cloud-gate').isVisible())await p.locator('[data-action="cloud-local-only"]').click();
   const open=async()=>{await p.locator('.student-name').first().click();await p.getByRole('button',{name:'Desempenho · Se Liga!',exact:true}).click();};
-  const edit=async()=>{await p.locator('#manual-grade-editor summary').click();await p.locator('#manual-grade-discipline').fill('Matemática');await p.locator('#manual-grade-discipline').dispatchEvent('change');};
+  const edit=async()=>{await p.locator('#manual-grade-editor summary').click();await p.locator('#manual-grade-discipline').fill('Matemática');await p.getByRole('button',{name:'Adicionar à tabela'}).click();};
   const note=async(i,value)=>{await p.locator(`[data-manual-note="${i}"]`).fill(value);await p.locator(`[data-manual-note="${i}"]`).dispatchEvent('change');};
   const save=async()=>{await p.locator('#manual-grade-reason').fill('Conferência no registro escolar: estudante ausente do PDF.');await p.getByRole('button',{name:'Salvar notas manuais'}).click();};
   await open();await edit();await note(0,'11');await save();assert.match(await p.locator('#notice').innerText(),/faixa/);assert.equal(await p.evaluate(()=>EduApp.getState().grades.length),0);
