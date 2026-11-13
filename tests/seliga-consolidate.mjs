@@ -1,0 +1,10 @@
+import fs from 'node:fs';import vm from 'node:vm';import assert from 'node:assert/strict';
+const html=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');globalThis.window={};vm.runInThisContext(html.match(/<script id="engine">([\s\S]*?)<\/script>/)[1]);const E=window.Edu;
+const base={year:2026,registration:'001',name:'Aluno',group:'3 D',discipline:'Arte',notes:[6,7,8],callNumber:2};
+const merged=E.consolidateGradeCalls([{...base,notes:[null,0,9],callNumber:28},base,{...base,notes:[8,null,null],callNumber:12},{...base,registration:'002'}]);
+assert.equal(merged.length,2);assert.deepEqual(merged[0].notes,[8,0,9]);assert.equal(merged[0].callNumber,28);
+assert.deepEqual(E.consolidateGradeCalls([base,{...base,notes:[null,null,null],callNumber:28}])[0].notes,[6,7,8]);
+assert.equal(E.consolidateGradeCalls([base,{...base,discipline:'Ciências'}]).length,2);
+assert.equal(E.consolidateGradeCalls([base,{...base,year:2025}]).length,2);
+assert.throws(()=>E.consolidateGradeCalls([{...base,registration:''}]),/CGM não informado/);
+console.log('PASS: highest call wins, zero preserved, blanks filled, disciplines/years/CGMs separate and invalid CGM rejected.');

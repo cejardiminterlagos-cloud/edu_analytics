@@ -5,6 +5,7 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),vm=
  assert.equal(pdf.students.length,35);assert.equal(pdf.students[0].subjects.length,12);
  const seed=JSON.parse(html.match(/<script id="initial-data" type="application\/json">([\s\S]*?)<\/script>/)[1]);
  seed.students=pdf.students.map((s,i)=>({id:'test-'+i,registration:String(i+1).padStart(8,'0'),name:s.name,group:'6º Ano A',series:'6EF',shift:'Tarde',status:'MATRICULADO',rosterStudent:true,documents:{},history:[],sources:{}}));
+ seed.students.push({id:'empty',registration:'',name:'',documents:{},history:[],sources:{}});
  const b=await chromium.launch({headless:true,executablePath:process.env.EDGE_PATH||'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'});
  try{
  const context=await b.newContext({viewport:{width:1440,height:1000},acceptDownloads:true});const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
@@ -18,17 +19,16 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),vm=
  assert.equal(await page.locator('[data-grade-link]').count(),35);assert.equal(await page.locator('[data-grade-link="2"]').inputValue(),'00000002');
  await page.locator('[data-grade-link="2"]').fill('00000001');await page.locator('[data-grade-link="3"]').fill('00000001');
  await page.getByRole('button',{name:'Conferir notas e vínculos'}).click();
- assert.equal(await page.locator('.grade-link-conflict').count(),3);assert.match(await page.locator('#grade-link-message-1').innerText(),/chamadas 1, 2, 3/);
- assert.equal(await page.evaluate(()=>document.activeElement.dataset.gradeLink),'1');assert.equal(await page.locator('[data-action="grades-apply"]').count(),0);
- await page.locator('[data-action="grade-link-goto"][data-value="3"]').click();assert.equal(await page.evaluate(()=>document.activeElement.dataset.gradeLink),'3');
- await page.locator('[data-grade-skip="3"]').check();assert.equal(await page.locator('.grade-link-conflict').count(),2);
- await page.locator('[data-grade-link="2"]').fill('00000002');assert.equal(await page.locator('.grade-link-conflict').count(),0);
- await page.locator('[data-grade-skip="3"]').uncheck();assert.equal(await page.locator('.grade-link-conflict').count(),2);
- await page.locator('[data-grade-link="3"]').fill('00000003');assert.equal(await page.locator('.grade-link-conflict').count(),0);
+ assert.equal(await page.locator('.grade-link-consolidated').count(),3);assert.match(await page.locator('#grade-link-message-1').innerText(),/consolidar na chamada 3/);
+ assert.equal(await page.locator('[data-action="grades-apply"]').count(),1);assert.match(await page.locator('#grades-preview').innerText(),/396 novos/);
+ await page.locator('[data-grade-skip="3"]').check();assert.equal(await page.locator('.grade-link-consolidated').count(),2);assert.match(await page.locator('#grade-link-message-1').innerText(),/consolidar na chamada 2/);
+ await page.locator('[data-grade-link="2"]').fill('00000002');assert.equal(await page.locator('.grade-link-consolidated').count(),0);
+ await page.locator('[data-grade-skip="3"]').uncheck();assert.equal(await page.locator('.grade-link-consolidated').count(),2);
+ await page.locator('[data-grade-link="3"]').fill('00000003');assert.equal(await page.locator('.grade-link-consolidated').count(),0);
  await page.locator('[data-grade-link="4"]').fill('99999999');assert.equal(await page.locator('.grade-link-conflict').count(),1);assert.match(await page.locator('#grade-link-message-4').innerText(),/CGM válido/);
  await page.locator('[data-grade-link="4"]').fill('00000004');assert.equal(await page.locator('[aria-invalid="true"]').count(),0);
  await page.locator('[data-grade-link="2"]').fill('');await page.locator('[data-grade-link="2"]').dispatchEvent('change');
- await page.getByRole('button',{name:'Conferir notas e vínculos'}).click();assert.match(await page.locator('#notice').innerText(),/chamada 2/);
+ await page.getByRole('button',{name:'Conferir notas e vínculos'}).click();assert.match(await page.locator('#notice').innerText(),/chamada 2/);assert.equal(await page.locator('.grade-link-conflict').count(),1);assert.equal(await page.evaluate(()=>document.activeElement.dataset.gradeLink),'2');assert.equal(await page.locator('[data-action="grades-apply"]').count(),0);
  await page.locator('[data-grade-link="2"]').fill('00000002');await page.locator('[data-grade-link="2"]').dispatchEvent('change');
  await page.getByRole('button',{name:'Conferir notas e vínculos'}).click();assert.match(await page.locator('#grades-preview').innerText(),/420 novos/);
  await page.getByRole('button',{name:'Aplicar notas conferidas'}).click();await page.waitForFunction(()=>EduApp.getState().grades?.length===420);

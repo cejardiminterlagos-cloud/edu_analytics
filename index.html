@@ -20,6 +20,7 @@
 @media print{#print-area .oficio-report{width:100%;table-layout:fixed;border-collapse:collapse;font:9pt Arial,sans-serif}#print-area .oficio-report thead{display:table-header-group}#print-area .oficio-report tr{break-inside:avoid}#print-area .oficio-report th,#print-area .oficio-report td{border:1px solid #777;padding:5px;overflow-wrap:anywhere;vertical-align:middle}#print-area .oficio-report .oficio-heading{border:0;text-align:center;padding:0 0 8mm}#print-area .oficio-heading img{width:17.7mm;height:21.2mm;display:block;margin:0 auto 4mm}#print-area .oficio-heading h1{font-size:14pt;margin:0}#print-area .oficio-heading p{margin:2mm 0 0}#print-area .oficio-distortion th:nth-child(1){width:15%}#print-area .oficio-distortion th:nth-child(2){width:28%}#print-area .oficio-distortion th:nth-child(3){width:13%}#print-area .oficio-distortion th:nth-child(4){width:17%}#print-area .oficio-distortion td{height:9mm}}
  #dossier .manual-grade-table{min-width:640px;width:100%;table-layout:fixed}#dossier .manual-grade-table th,#dossier .manual-grade-table td{padding:6px;white-space:normal;vertical-align:middle;overflow-wrap:anywhere}#dossier .manual-grade-table th:first-child{width:26%}#dossier .manual-grade-table th:nth-child(n+2):nth-child(-n+4){width:14%}#dossier .manual-grade-table th:nth-child(5){width:12%}.manual-grade-table input[data-manual-note]{width:100%;margin:0;padding:4px;text-align:center;font-variant-numeric:tabular-nums}.manual-grade-table .check{font-size:10px;margin:3px 0 0;gap:4px}.manual-grade-table td[data-manual-mean]{font-weight:600}
  #grades-pdf-links tr.grade-link-conflict td{background:#fff0ed;border-bottom-color:#d99a8d}#grades-pdf-links [aria-invalid="true"]{border:2px solid #a52e22}.grade-link-message{color:#8c241a;font-weight:600;margin:6px 0 0}#grade-link-conflicts:empty{display:none}
+ #grades-pdf-links tr.grade-link-consolidated td{background:#fff6dc}#grades-pdf-links .grade-link-consolidated .grade-link-message{color:#725011}
 </style>
 <style id="cloud-styles">.cloud-gate{position:fixed;inset:0;z-index:10000;display:grid;place-items:center;padding:20px;background:#f4f5f0}.cloud-gate[hidden]{display:none}.cloud-card{width:min(520px,100%);padding:28px;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 18px 60px #15251a22}.cloud-card h1{margin:0 0 10px;font-size:24px}.cloud-card p{color:var(--muted);line-height:1.5}.cloud-card form{display:grid;gap:12px}.cloud-card input{width:100%;padding:10px;border:1px solid var(--border);border-radius:6px}.cloud-card .cloud-message{min-height:24px;margin-bottom:0}.cloud-card .cloud-message[data-state="error"]{color:#a52b1d}.cloud-card .cloud-message[data-state="pending"]{color:#80540d}.cloud-card .cloud-actions{display:flex;gap:10px;flex-wrap:wrap}.cloud-status{font-size:12px;line-height:1.4;color:var(--muted)}.cloud-status[data-state="ok"]{color:#215d49}.cloud-status[data-state="error"]{color:#a52b1d}.cloud-status[data-state="pending"]{color:#80540d}</style>
 <style id="eduanalytics-v2">
@@ -307,7 +308,7 @@ window.Edu = (() => {
   if(!Array.isArray(records)||records.length>150000)throw Error('Base de notas inválida ou acima de 150 mil registros.');
   const seen=new Set(),students=new Map();
   for(const r of records){
-   if(!r||!Number.isInteger(r.year)||r.year<2000||r.year>2100||typeof r.registration!=='string'||!/^\d{1,40}$/.test(r.registration)||['name','group','discipline'].some(k=>typeof r[k]!=='string'||!r[k].trim()||r[k].length>200))throw Error('Nota sem CGM, nome, turma, disciplina ou ano válido.');
+   if(!r||!Number.isInteger(r.year)||r.year<2000||r.year>2100||typeof r.registration!=='string'||!/^\d{1,40}$/.test(r.registration)||['name','group','discipline'].some(k=>typeof r[k]!=='string'||!r[k].trim()||r[k].length>200))throw Error('Nota inválida: CGM '+(r?.registration||'não informado')+' · chamada '+(r?.callNumber??'não informada')+' · disciplina '+(r?.discipline||'não informada')+'. Confira CGM, nome, turma, disciplina e ano.');
    gradeSummary(r.notes);
    if(r.manual!=null&&(!Array.isArray(r.manual)||r.manual.length!==3||r.manual.some(v=>typeof v!=='boolean')))throw Error('Proteção das notas inválida.');
    if(r.callNumber!=null&&(!Number.isInteger(r.callNumber)||r.callNumber<1||r.callNumber>999))throw Error('Número de chamada inválido.');
@@ -332,6 +333,14 @@ window.Edu = (() => {
   }
   for(const saved of records){const identity=identities.get(JSON.stringify([saved.year,saved.registration]));if(identity){saved.name=identity.name;saved.group=identity.group;for(const key of ['callNumber','pdfName','pdfGroup'])if(identity[key]!=null)saved[key]=identity[key];}}
   validateGrades(records);return {records,added,updated};
+ }
+ function consolidateGradeCalls(incoming){
+  const records=new Map();
+  for(const r of [...incoming].sort((a,b)=>a.callNumber-b.callNumber)){
+   validateGrades([r]);const key=gradeKey(r),old=records.get(key);
+   records.set(key,old?{...old,...r,notes:r.notes.map((n,i)=>n===null?old.notes[i]:n)}:structuredClone(r));
+  }
+  return validateGrades([...records.values()]);
  }
  function parseGrades(rows,map,year,students=[]){
   if(!Number.isInteger(year)||year<2000||year>2100)throw Error('Ano letivo inválido.');
@@ -421,7 +430,7 @@ window.Edu = (() => {
   return {p_grades:after.filter(r=>JSON.stringify(payload(old.get(gradeKey(r))||{notes:[]}))!==JSON.stringify(payload(r))).map(payload),p_removed_grades:before.filter(r=>!current.has(gradeKey(r))).map(r=>({year:r.year,registration:r.registration,disciplineKey:normalize(r.discipline)}))};
  }
 
- return {gradeDelta,parseGradePDF,suggestGradeLink,GRADE_LEVELS,gradeNumber,gradeSummary,gradeKey,validateGrades,mergeGrades,parseGrades,DOCS,IDEAL,LABELS,SPECIAL_COURSES,matchSpecialCourses,activeRosterStatus,isActiveRosterStudent,rosterPriority,normalize,esc,uid,today,dateISO,parseCSV,toCSV,series,number,docStatus,pending,metrics,isFinalYear,enrollmentSummary,month,migrateFrequency,monthlySummary,mergeStudentDatasets,validateEvents,deadline};
+ return {consolidateGradeCalls,gradeDelta,parseGradePDF,suggestGradeLink,GRADE_LEVELS,gradeNumber,gradeSummary,gradeKey,validateGrades,mergeGrades,parseGrades,DOCS,IDEAL,LABELS,SPECIAL_COURSES,matchSpecialCourses,activeRosterStatus,isActiveRosterStudent,rosterPriority,normalize,esc,uid,today,dateISO,parseCSV,toCSV,series,number,docStatus,pending,metrics,isFinalYear,enrollmentSummary,month,migrateFrequency,monthlySummary,mergeStudentDatasets,validateEvents,deadline};
 })();
 </script>
 <script id="application">'use strict';
@@ -757,13 +766,14 @@ window.Edu = (() => {
   for(const row of rows){const reg=row.input.value.trim();if(!row.skip&&reg){if(!groups.has(reg))groups.set(reg,[]);groups.get(reg).push(row.callNumber);}}
   for(const row of rows){
    const reg=row.input.value.trim(),student=db.students.find(s=>s.registration===reg),calls=groups.get(reg)||[],cell=$(`[data-grade-match="${row.callNumber}"]`),tr=row.input.closest('tr');
-   const error=row.skip?'':calls.length>1?`CGM ${reg} repetido nas chamadas ${calls.join(', ')}. Corrija o vínculo ou marque Não importar.`:!student?`Selecione um CGM válido para a chamada ${row.callNumber} ou marque Não importar.`:'';
-   tr.classList.toggle('grade-link-conflict',!!error);row.input.setAttribute('aria-invalid',String(!!error));row.input.setAttribute('aria-describedby','grade-link-message-'+row.callNumber);
+   const error=row.skip?'':!/^\d{1,40}$/.test(reg)||!student?`Selecione um CGM válido para a chamada ${row.callNumber} ou marque Não importar.`:!student.name?.trim()?`Cadastro do CGM ${reg} sem nome. Corrija o cadastro ou marque Não importar na chamada ${row.callNumber}.`:'';
+   tr.classList.toggle('grade-link-conflict',!!error);tr.classList.toggle('grade-link-consolidated',!error&&!row.skip&&calls.length>1);row.input.setAttribute('aria-invalid',String(!!error));row.input.setAttribute('aria-describedby','grade-link-message-'+row.callNumber);
    cell.textContent=row.skip?'Não será importado':student?student.name+' · '+group(student.schoolYears?.[gradeImport.pdf.year]||student):'Vínculo pendente';
-   const message=document.createElement('p');message.id='grade-link-message-'+row.callNumber;message.className='grade-link-message';message.textContent=error;cell.appendChild(message);
+   const message=document.createElement('p');message.id='grade-link-message-'+row.callNumber;message.className='grade-link-message';message.textContent=error||(!row.skip&&calls.length>1?`CGM ${reg} nas chamadas ${calls.join(', ')}: consolidar na chamada ${Math.max(...calls)}. Notas da chamada maior têm prioridade; vazios aproveitam as anteriores.`:'');cell.appendChild(message);
    if(error)issues.push({...row,error});
   }
   $('#grade-link-conflicts').innerHTML=issues.length?`<div class="message"><b>${issues.length} vínculo(s) precisam de correção.</b><p>As linhas estão destacadas. Selecione uma chamada para ir até ela.</p><div class="actions">${issues.map(r=>`<button type="button" class="secondary" data-action="grade-link-goto" data-value="${r.callNumber}">Chamada ${r.callNumber} · ${h(r.name)}</button>`).join('')}</div></div>`:'';
+  const duplicates=[...groups].filter(([,calls])=>calls.length>1);if(duplicates.length)$('#grade-link-conflicts').insertAdjacentHTML('beforeend',`<p class="message info">${duplicates.length} CGM(s) repetidos serão consolidados na maior chamada. Confira as linhas destacadas; Não importar exclui a linha da consolidação.</p>`);
   if(focus&&issues.length){issues[0].input.scrollIntoView({block:'center'});issues[0].input.focus({preventScroll:true});}
   return issues;
  }
@@ -777,7 +787,7 @@ window.Edu = (() => {
    row.subjects.forEach((r,i)=>incoming.push({year:report.year,registration:reg,name:student.name,group:group(yearRecord),discipline:$(`[data-grade-subject="${i}"]`).value.trim(),notes:r.notes,callNumber:row.callNumber,pdfName:row.name,pdfGroup:report.group,source:gradeImport.file,importedAt:now}));
   }
   if(!incoming.length)throw Error('Selecione ao menos um estudante.');
-  setGradePreview(incoming);
+  setGradePreview(E.consolidateGradeCalls(incoming));
  }
  function setGradePreview(incoming){
   const result=E.mergeGrades(db.grades||[],incoming);gradePreview={...result,base:db,incoming};
