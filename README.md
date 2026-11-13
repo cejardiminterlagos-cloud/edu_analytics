@@ -43,3 +43,11 @@ Testes adicionais: `node tests/seliga-full.mjs`, `node tests/seliga-cloud-browse
 ### Notas na importação geral
 
 A tela Importar e cruzar reconhece PDFs de acompanhamento trimestral como Notas trimestrais · Se Liga!. Após selecionar vários arquivos, use Conferir notas em sequência. Cada aplicação abre o próximo PDF já lido, preservando as notas anteriores. Em lotes mistos, aplicar cadastros/frequências mantém os PDFs de notas aguardando conferência. A fila é temporária no navegador; os arquivos originais não são salvos. Teste de regressão: `tests/seliga-batch-browser.cjs`, com arquivos locais 3b/3c/3d e dados apenas na sessão isolada.
+
+### Lançamento manual na ficha
+
+Na ficha do estudante, abra **Desempenho · Se Liga! → Lançar ou corrigir notas**, confira o ano e selecione ou digite a disciplina. Informe os trimestres e o motivo. Funciona mesmo sem notas importadas para esse CGM. Zero entra na média; vazio significa ausência de nota. Apagar uma nota existente retira o trimestre do cálculo. Frequência não atribui nota zero automaticamente.
+
+Cada trimestre alterado recebe proteção contra importações. Desmarque **Preservar T… nas importações** e salve para permitir atualizações futuras daquele trimestre. A ficha e o PDF identificam os trimestres protegidos. Notas, proteções e motivo são registrados no histórico do aluno; os mesmos dados alimentam médias, conceitos, matriz, CSV e PDF. Outros anos, estudantes e disciplinas são preservados.
+
+Depois de `supabase/grades.sql`, aplique uma vez `supabase/manual-grades.sql`. A coluna `manual` guarda três indicadores booleanos; a RPC continua transacional e mantém a proteção inclusive para clientes antigos sem esse campo. Testes: `tests/seliga-manual.mjs`, `tests/seliga-manual-browser.cjs`, `tests/seliga-cloud-browser.cjs` e `tests/manual-grades.sql` (transação revertida). Nenhum documento original é armazenado.
