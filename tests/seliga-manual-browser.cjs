@@ -14,12 +14,12 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
   const save=async()=>{await p.locator('#manual-grade-reason').fill('Conferência no registro escolar: estudante ausente do PDF.');await p.getByRole('button',{name:'Salvar notas manuais'}).click();};
   await open();await edit();await note(0,'11');await save();assert.match(await p.locator('#notice').innerText(),/faixa/);assert.equal(await p.evaluate(()=>EduApp.getState().grades.length),0);
   await note(0,'0');await note(1,'8');await save();await p.waitForFunction(()=>EduApp.getState().grades.length===1);
-  let r=await p.evaluate(()=>EduApp.getState().grades[0]);assert.deepEqual(r.notes,[0,8,null]);assert.deepEqual(r.manual,[true,true,false]);assert.match(await p.locator('.individual-grades').innerText(),/4,0/);
+  let r=await p.evaluate(()=>EduApp.getState().grades[0]);assert.deepEqual(r.notes,[0,8,null]);assert.deepEqual(r.manual,[true,true,false]);assert.match(await p.locator('.individual-grades').innerText(),/Sem Nota/);
   await edit();await note(0,'7,5');await note(1,'');await save();await p.waitForFunction(()=>EduApp.getState().grades[0].notes[0]===7.5);assert.equal(await p.evaluate(()=>EduApp.getState().students[0].history.length),2);
   await p.getByRole('button',{name:'Exportar relatório individual'}).click();assert.match(await p.locator('#print-area').innerText(),/7,5/);
   await p.getByRole('button',{name:'Fechar',exact:true}).click();await p.getByRole('link',{name:'Se Liga!',exact:true}).click();
   const importCSV=async()=>{if(!await p.locator('#grades-file').isVisible())await p.locator('#view details.panel summary').click();await p.locator('#grades-file').setInputFiles({name:'novas.csv',mimeType:'text/csv',buffer:Buffer.from('CGM;Disciplina;T1;T2;T3\n001;Matemática;1;10;9')});await p.getByRole('button',{name:'Ler e conferir colunas'}).click();await p.getByRole('button',{name:'Conferir importação',exact:true}).click();await p.getByRole('button',{name:'Aplicar notas conferidas'}).click();};
-  await importCSV();await p.waitForFunction(()=>EduApp.getState().grades[0].notes[2]===9);assert.deepEqual(await p.evaluate(()=>EduApp.getState().grades[0].notes),[7.5,null,9]);assert.match(await p.locator('.grade-matrix').innerText(),/8,25/);
+  await importCSV();await p.waitForFunction(()=>EduApp.getState().grades[0].notes[2]===9);assert.deepEqual(await p.evaluate(()=>EduApp.getState().grades[0].notes),[7.5,null,9]);assert.match(await p.locator('.grade-matrix').innerText(),/SN · 2\/3/);
   await p.getByRole('link',{name:'Cruzamento de alunos',exact:true}).click();await open();await edit();assert.equal(await p.locator('[data-manual-note="0"]').inputValue(),'7.5');await p.locator('[data-manual-lock="1"]').uncheck();await save();
   await p.getByRole('button',{name:'Fechar',exact:true}).click();await p.getByRole('link',{name:'Se Liga!',exact:true}).click();await importCSV();await p.waitForFunction(()=>EduApp.getState().grades[0].notes[1]===10);
   await p.reload();await p.waitForFunction(()=>window.EduApp?.getState().grades?.[0]?.notes[1]===10);if(await p.locator('#cloud-gate').isVisible())await p.locator('[data-action="cloud-local-only"]').click();
@@ -28,4 +28,3 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),ass
   assert.deepEqual(errors,[]);console.log('PASS: missing student grades, validation, manual zero/blank, audit, protection/release, reimport, matrix, PDF and reload.');
  }finally{await b.close();}
 })().catch(e=>{console.error(e);process.exit(1)});
-
