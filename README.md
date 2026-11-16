@@ -63,3 +63,7 @@ Depois de `supabase/grades.sql`, aplique uma vez `supabase/manual-grades.sql`. A
 ### CSV Consolidado notas
 
 O importador reconhece disciplinas lado a lado e extrai T1, T2 e T3. A turma vem do cadastro pelo CGM no ano selecionado; apenas CGMs sem turma única exigem preenchimento individual. Médias e grupos são recalculados. Neste formato, traços e campos vazios limpam notas importadas anteriores, com lista na prévia. Notas manuais continuam protegidas. PDF e CSV de uma linha por disciplina mantêm seu comportamento.
+
+### Conceito geral e acesso à ficha
+
+O conceito geral é a média sem arredondamento intermediário das médias de todas as disciplinas registradas para a turma e ano, com pesos iguais. Uma disciplina ou trimestre ausente mantém Sem Nota; a ficha informa a quantidade de disciplinas completas. Filtros de disciplina não alteram o conceito geral. A tag aparece junto aos estudantes e na ficha, e o painel por turma conta os conceitos gerais. Nomes identificados pelo cadastro ou CGM abrem a ficha; registros somente de notas abrem uma ficha de consulta sem criar cadastro. As disciplinas esperadas são inferidas dos registros da turma: um componente que nunca foi importado para ninguém não pode ser detectado.
