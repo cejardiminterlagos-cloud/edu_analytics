@@ -370,6 +370,23 @@ window.Edu = (() => {
   for(const saved of records){const identity=identities.get(JSON.stringify([saved.year,saved.registration]));if(identity){saved.name=identity.name;saved.group=identity.group;for(const key of ['callNumber','pdfName','pdfGroup'])if(identity[key]!=null)saved[key]=identity[key];}}
   validateGrades(records);return {records,added,updated};
  }
+ function consolidatedGradeRemovals(existing,incoming){
+  const groupSubjects=new Map(),studentGroups=new Map();
+  const classKey=r=>JSON.stringify([r.year,normalize(r.group)]);
+  const studentKey=r=>JSON.stringify([r.year,r.registration]);
+  for(const r of incoming){
+   const key=classKey(r);
+   if(!groupSubjects.has(key))groupSubjects.set(key,new Set());
+   groupSubjects.get(key).add(normalize(r.discipline));
+   studentGroups.set(studentKey(r),key);
+  }
+  const removed=[],protectedRows=[];
+  for(const r of existing){
+   const subjects=groupSubjects.get(studentGroups.get(studentKey(r))||classKey(r));
+   if(subjects&&!subjects.has(normalize(r.discipline)))(r.manual?.some(Boolean)?protectedRows:removed).push(r);
+  }
+  return {removed,protectedRows};
+ }
  function consolidateGradeCalls(incoming){
   const records=new Map();
   for(const r of [...incoming].sort((a,b)=>a.callNumber-b.callNumber)){
@@ -526,7 +543,7 @@ window.Edu = (() => {
   return {p_grades:after.filter(r=>JSON.stringify(payload(old.get(gradeKey(r))||{notes:[]}))!==JSON.stringify(payload(r))).map(payload),p_removed_grades:before.filter(r=>!current.has(gradeKey(r))).map(r=>({year:r.year,registration:r.registration,disciplineKey:normalize(r.discipline)}))};
  }
 
- return {overallGrade,consolidatedGrades,imageGradeStudents,imageGradeRows,imageGradeSubjects,imageGradeEdges,gradeDistribution,consolidateGradeCalls,gradeDelta,parseGradePDF,suggestGradeLink,GRADE_LEVELS,gradeNumber,gradeSummary,gradeKey,validateGrades,mergeGrades,parseGrades,DOCS,IDEAL,LABELS,SPECIAL_COURSES,matchSpecialCourses,activeRosterStatus,isActiveRosterStudent,rosterPriority,normalize,esc,uid,today,dateISO,parseCSV,toCSV,series,number,docStatus,pending,metrics,isFinalYear,enrollmentSummary,month,migrateFrequency,monthlySummary,mergeStudentDatasets,validateEvents,deadline};
+ return {overallGrade,consolidatedGrades,consolidatedGradeRemovals,imageGradeStudents,imageGradeRows,imageGradeSubjects,imageGradeEdges,gradeDistribution,consolidateGradeCalls,gradeDelta,parseGradePDF,suggestGradeLink,GRADE_LEVELS,gradeNumber,gradeSummary,gradeKey,validateGrades,mergeGrades,parseGrades,DOCS,IDEAL,LABELS,SPECIAL_COURSES,matchSpecialCourses,activeRosterStatus,isActiveRosterStudent,rosterPriority,normalize,esc,uid,today,dateISO,parseCSV,toCSV,series,number,docStatus,pending,metrics,isFinalYear,enrollmentSummary,month,migrateFrequency,monthlySummary,mergeStudentDatasets,validateEvents,deadline};
 })();
 </script>
 <script id="application">'use strict';
@@ -906,8 +923,8 @@ window.Edu = (() => {
   if(!incoming.length)throw Error('Selecione ao menos um estudante.');
   setGradePreview(E.consolidateGradeCalls(incoming));
  }
- function setGradePreview(incoming,replaceMissing=false){
-  const result=E.mergeGrades(db.grades||[],incoming,replaceMissing);gradePreview={...result,base:db,incoming};
+ function setGradePreview(incoming,replaceMissing=false,existing=db.grades||[]){
+  const result=E.mergeGrades(existing,incoming,replaceMissing);gradePreview={...result,base:db,incoming};
   const byKey=new Map(result.records.map(r=>[E.gradeKey(r),r]));
   $('#grades-preview').innerHTML=`<h3 class="mt">${result.added} novos · ${result.updated} atualizações</h3><p>${new Set(incoming.map(r=>r.registration)).size} estudantes · ${incoming.length} registros · ano ${gradeImport.year}. Confira a amostra de até 10 registros antes de aplicar.</p><p class="notes">${replaceMissing?'Ausências no consolidado apagam notas importadas anteriores.':'Campos vazios preservam notas já salvas.'} Trimestres protegidos por lançamento manual não são substituídos. O arquivo original será descartado após a leitura; somente dados extraídos e identificação da origem são salvos.</p><div class="table-wrap"><table><thead><tr><th>CGM</th><th>Nome</th><th>Disciplina</th><th>Notas T1 / T2 / T3</th><th>Média / conceito</th></tr></thead><tbody>${incoming.slice(0,10).map(r=>{const saved=byKey.get(E.gradeKey(r)),m=E.gradeSummary(saved.notes);return `<tr><td>${h(r.registration)}</td><td>${studentName(r)}</td><td>${h(r.discipline)}</td><td>${saved.notes.map(gradeFormat).join(' / ')}</td><td>${gradeFormat(m.mean)} · ${h(m.level.label)}</td></tr>`;}).join('')}</tbody></table></div><button class="mt" data-action="grades-apply">Aplicar notas conferidas</button>`;
  }
@@ -1054,7 +1071,7 @@ window.Edu = (() => {
    const pending=[...new Map(consolidated.data.filter(r=>!resolved.get(String(r[1]).trim())).map(r=>[String(r[1]).trim(),r])).values()];
    const aliases={'ED. FÍSICA':'Educação Física','ED. DIGITAL':'Educação Digital'};
    const subjects=[...new Set((db.grades||[]).filter(r=>r.year===gradeImport.year).map(r=>r.discipline))];
-   $('#grades-mapping').innerHTML=`<h2>Consolidado reconhecido</h2><p>${consolidated.data.length} estudantes · ${consolidated.blocks.length} disciplinas · ano ${gradeImport.year}. Médias e grupos serão recalculados. Zero é nota; traço ou vazio é ausência.</p><form id="grades-consolidated"><p>A turma é obtida pelo CGM no cadastro do ano ${gradeImport.year}.</p>${pending.length?`<fieldset><legend>Turmas pendentes: ${pending.length}</legend><p>CGM não encontrado, turma ausente ou vínculos divergentes. Informe somente estas pendências.</p>${pending.map(r=>`<label>${h(r[2])} · CGM ${h(r[1])}<input data-consolidated-group="${h(String(r[1]).trim())}" required maxlength="200" placeholder="Ex.: 8º Ano A"></label>`).join('')}</fieldset>`:'<p>Todos os estudantes têm turma identificada no cadastro.</p>'}<div class="mapping-grid">${consolidated.blocks.map((b,i)=>{const suggested=aliases[b.name]||b.name;const match=subjects.find(s=>E.normalize(s)===E.normalize(suggested));return `<label>${h(b.name)}<input data-consolidated-subject="${i}" list="consolidated-subjects" required maxlength="200" value="${h(match||suggested)}"></label>`;}).join('')}</div><datalist id="consolidated-subjects">${subjects.map(s=>`<option value="${h(s)}">`).join('')}</datalist><p>Confira a turma e os nomes das disciplinas para atualizar os registros existentes. Notas ausentes limparão valores importados anteriores; correções manuais permanecem protegidas.</p><button type="submit">Conferir importação</button></form><div id="grades-preview"></div>`;
+   $('#grades-mapping').innerHTML=`<h2>Consolidado reconhecido</h2><p>${consolidated.data.length} estudantes · ${consolidated.blocks.length} disciplinas · ano ${gradeImport.year}. Médias e grupos serão recalculados. Zero é nota; traço ou vazio é ausência.</p><form id="grades-consolidated"><p>A turma é obtida pelo CGM no cadastro do ano ${gradeImport.year}.</p>${pending.length?`<fieldset><legend>Turmas pendentes: ${pending.length}</legend><p>CGM não encontrado, turma ausente ou vínculos divergentes. Informe somente estas pendências.</p>${pending.map(r=>`<label>${h(r[2])} · CGM ${h(r[1])}<input data-consolidated-group="${h(String(r[1]).trim())}" required maxlength="200" placeholder="Ex.: 8º Ano A"></label>`).join('')}</fieldset>`:'<p>Todos os estudantes têm turma identificada no cadastro.</p>'}<div class="mapping-grid">${consolidated.blocks.map((b,i)=>{const suggested=aliases[b.name]||b.name;const match=subjects.find(s=>E.normalize(s)===E.normalize(suggested));return `<label>${h(b.name)}<input data-consolidated-subject="${i}" list="consolidated-subjects" required maxlength="200" value="${h(match||suggested)}"></label>`;}).join('')}</div><datalist id="consolidated-subjects">${subjects.map(s=>`<option value="${h(s)}">`).join('')}</datalist><p>Confira a turma e os nomes das disciplinas para atualizar os registros existentes. Notas ausentes limparão valores importados anteriores; correções manuais permanecem protegidas.</p><label class="check"><input type="checkbox" id="consolidated-replace-subjects"> Usar a lista do CSV como lista completa de disciplinas das turmas importadas</label><p class="notes">Marque apenas se o arquivo trouxer todas as disciplinas dessas turmas. A prévia mostrará as disciplinas antigas a remover para o ano selecionado, inclusive para estudantes que não estão no arquivo. Disciplinas com correção manual protegida ficam na base.</p><button type="submit">Conferir importação</button></form><div id="grades-preview"></div>`;
    return;
   }
   const header=gradeImport.sheets[gradeImport.sheet].rows[0]||[];
@@ -1072,7 +1089,14 @@ window.Edu = (() => {
   E.validateGrades(incoming);
   const old=new Map((db.grades||[]).map(r=>[E.gradeKey(r),r]));
   const cleared=incoming.flatMap(r=>r.notes.flatMap((n,i)=>{const prev=old.get(E.gradeKey(r));return n===null&&prev?.notes[i]!=null&&!prev.manual?.[i]?[`${r.name} · ${r.discipline} · T${i+1}: ${gradeFormat(prev.notes[i])} → Sem Nota`]:[];}));
-  setGradePreview(incoming,true);
+  const existing=db.grades||[],replaceSubjects=$('#consolidated-replace-subjects').checked;
+  const {removed,protectedRows}=replaceSubjects?E.consolidatedGradeRemovals(existing,incoming):{removed:[],protectedRows:[]};
+  const removedKeys=new Set(removed.map(E.gradeKey));
+  setGradePreview(incoming,true,existing.filter(r=>!removedKeys.has(E.gradeKey(r))));
+  if(replaceSubjects){
+   const details=(rows,label)=>rows.length?`<details><summary>${rows.length} ${label}</summary><ul>${rows.map(r=>`<li>${h(r.group)} · ${h(r.name)} (CGM ${h(r.registration)}) · ${h(r.discipline)} · ${r.notes.map(gradeFormat).join(' / ')}</li>`).join('')}</ul></details>`:'';
+   $('#grades-preview').insertAdjacentHTML('afterbegin',`<p><strong>Substituição de disciplinas: ${removed.length} registro(s) a remover no ano ${gradeImport.year}.</strong></p>${details(removed,'registros antigos a remover')}${details(protectedRows,'registros fora do CSV mantidos por proteção manual. Eles continuam na matriz e no cálculo.')}`);
+  }
   $('#grades-preview').insertAdjacentHTML('afterbegin',`<p>${cleared.length} nota(s) anterior(es) serão apagadas por ausência no CSV.</p>${cleared.length?`<details><summary>Ver notas que serão apagadas</summary><ul>${cleared.map(v=>`<li>${h(v)}</li>`).join('')}</ul></details>`:''}`);
  }
  function previewGrades(){
