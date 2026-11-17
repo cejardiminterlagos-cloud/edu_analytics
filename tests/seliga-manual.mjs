@@ -1,7 +1,7 @@
 import fs from 'node:fs';import vm from 'node:vm';import assert from 'node:assert/strict';
 const html=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');globalThis.window={};vm.runInThisContext(html.match(/<script id="engine">([\s\S]*?)<\/script>/)[1]);const E=window.Edu;
 const r={year:2026,registration:'001',name:'Teste',group:'6 A',discipline:'Arte',notes:[0,null,8],manual:[true,true,false]};
-assert.equal(E.gradeSummary(r.notes).mean,4);
+assert.equal(E.gradeSummary(r.notes).level.key,'missing');
 const merged=E.mergeGrades([r],[{...r,notes:[9,9,9],manual:undefined}]).records[0];
 assert.deepEqual(merged.notes,[0,null,9]);assert.deepEqual(merged.manual,[true,true,false]);
 assert.deepEqual(E.mergeGrades([{...r,manual:[false,false,false]}],[{...r,notes:[9,9,9]}]).records[0].notes,[9,9,9]);

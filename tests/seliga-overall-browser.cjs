@@ -5,6 +5,7 @@ const app=path.resolve(__dirname,'../index.html'),html=fs.readFileSync(app,'utf8
 const seed=JSON.parse(html.match(/<script id="initial-data" type="application\/json">([\s\S]*?)<\/script>/)[1]);
 seed.students=[{id:'s1',registration:'001',name:'Ana Teste',group:'8º Ano A',series:'8EF',status:'MATRICULADO',documents:{},history:[],sources:{},rosterStudent:true}];
 seed.grades=[{year:2026,registration:'001',name:'Ana Teste',group:'8º Ano A',discipline:'Arte',notes:[5,5,5]},{year:2026,registration:'001',name:'Ana Teste',group:'8º Ano A',discipline:'Matemática',notes:[8,8,8]},{year:2026,registration:'002',name:'Bia Teste',group:'8º Ano A',discipline:'Arte',notes:[9,9,9]}];
+seed.gradeCurricula=[{year:2026,group:'8º Ano A',disciplines:['Arte','Matemática']}];
 const browser=await chromium.launch({headless:true,executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'});
 try{
 const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.message));await p.route('https://**',r=>r.abort());

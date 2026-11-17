@@ -27,6 +27,12 @@ const path=require('node:path'),fs=require('node:fs'),assert=require('node:asser
  await page.waitForFunction(()=>EduApp.getState().grades?.length===150);
  assert.equal(await page.locator('#view .grade-matrix tbody tr').count(),10);
  assert.equal(await page.locator('#view .grade-matrix thead th').count(),17);
+ await page.locator('#grades-group').selectOption('9º A');
+ const math=page.getByRole('row').filter({has:page.getByRole('rowheader',{name:'Matemática',exact:true})});
+ assert.deepEqual(await math.getByRole('cell').allTextContents(),['2','1','3','4']);
+ await page.locator('#grades-level').selectOption('below');
+ assert.deepEqual(await math.getByRole('cell').allTextContents(),['2','1','3','4']);
+ await page.getByRole('button',{name:'Limpar filtros'}).click();
  await page.reload();await page.getByRole('heading',{name:'Se Liga!',exact:true}).waitFor();
  if(await page.locator('#cloud-gate').isVisible())await page.locator('[data-action="cloud-local-only"]').click();
  assert.equal(await page.evaluate(()=>EduApp.getState().grades.length),150);
@@ -36,10 +42,10 @@ const path=require('node:path'),fs=require('node:fs'),assert=require('node:asser
  assert.equal(await page.locator('#view .grade-matrix thead th').count(),3);
  await page.getByRole('button',{name:'Limpar filtros'}).click();
  const dlPromise=page.waitForEvent('download');await page.getByRole('button',{name:'Exportar CSV',exact:true}).click();
- const dl=await dlPromise,text=fs.readFileSync(await dl.path(),'utf8');assert(text.includes('Conceito'));assert(text.includes('Adequado'));assert(text.includes('000001'));
+ const dl=await dlPromise,text=fs.readFileSync(await dl.path(),'utf8');assert(text.includes('Conceito'));assert(text.includes('Aprofundamento'));assert(text.includes('000001'));
  await page.getByRole('button',{name:'Exportar PDF',exact:true}).click();
  assert.equal(await page.evaluate(()=>window.printCalled),true);
- assert.equal(await page.locator('#print-area .grade-matrix thead th').count(),17);
+ assert.equal(await page.locator('#print-area .grade-matrix thead tr:last-child th').count(),17);
  const artifacts=path.resolve(__dirname,'../../tmp/seliga');fs.mkdirSync(artifacts,{recursive:true});
  await page.evaluate(()=>{document.querySelector('#print-area h1').textContent+=' · SIMULAÇÃO';});
  await page.emulateMedia({media:'print'});

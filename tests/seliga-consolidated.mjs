@@ -7,6 +7,13 @@ for(const header of ['ESTUDANTE','NOME DO ALUNO']){
  const variant=structuredClone(rows);variant[1][2]=header;
  assert.deepEqual(E.consolidatedGrades(variant),E.consolidatedGrades(rows));
 }
+for(const header of ['NOME DO ESTUDANTE','ESTUDANTE','NOME DO ALUNO']){
+ const swapped=rows.map(r=>[r[0],r[2],r[1],...r.slice(3)]);swapped[1][1]=header;
+ const before=structuredClone(swapped);
+ assert.deepEqual(E.consolidatedGrades(swapped),E.consolidatedGrades(rows));
+ assert.deepEqual(swapped,before);
+ const invalid=structuredClone(swapped);invalid[3][2]='CGM inválido';assert.throws(()=>E.consolidatedGrades(invalid),/CGM/);
+}
 assert.equal(E.consolidatedGrades([['CGM','Disciplina']]),null);
 const bad=structuredClone(rows);bad[3][3]='11';assert.throws(()=>E.consolidatedGrades(bad));
 const short=structuredClone(rows);short[3].pop();assert.throws(()=>E.consolidatedGrades(short));
@@ -29,5 +36,5 @@ const before=[oldSubject,target];
 assert.equal(E.overallGrade(before,a.registration,a.group,a.year).total,2);
 const outdated=new Set(E.consolidatedGradeRemovals(before,[target]).removed.map(E.gradeKey));
 const after=E.mergeGrades(before.filter(r=>!outdated.has(E.gradeKey(r))),[target],true).records;
-assert.equal(E.overallGrade(after,a.registration,a.group,a.year).level.key,'adequate');
+assert.equal(E.overallGrade(after,a.registration,a.group,a.year,['Arte']).level.key,'adequate');
 assert.deepEqual(E.gradeDelta(before,after).p_removed_grades,[{year:a.year,registration:a.registration,disciplineKey:'ED DIG COMP'}]);

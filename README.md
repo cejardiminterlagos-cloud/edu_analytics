@@ -12,6 +12,8 @@ Os arquivos originais são lidos no navegador. O histórico guarda a identifica�
 - A chave `sb_publishable_...` no cliente é pública por definição; o controle de acesso é feito por Auth e RLS. Nenhuma chave `secret` ou `service_role` fica no navegador.
 - O arquivo CSV/XLSX/PDF original é processado no navegador e não é enviado como arquivo bruto; somente os dados interpretados e salvos no EduAnalytics vão para a tabela.
 - Se estiver sem conexão, é possível continuar neste navegador; o painel marca as alterações como não sincronizadas e permite tentar novamente depois.
+- Depois de **Sair da nuvem**, a interface exige novo login para reabrir a cópia local, inclusive após recarregar. A cópia e as alterações pendentes são preservadas. Esse bloqueio da interface não criptografa o IndexedDB; computadores compartilhados devem usar perfis Windows separados.
+- A sincronização com revisão desconhecida primeiro carrega ou concilia a base. Não envia a base local vazia como substituição da base compartilhada.
 
 ## Primeiro acesso e login
 
@@ -24,6 +26,10 @@ No painel do Supabase, em **Authentication → URL Configuration**, defina o Sit
 Abra **Se Liga!** e escolha o ano de referência. Importe CSV, XLSX ou XLS com uma linha por CGM e disciplina, confira a aba e associe as colunas antes de aplicar. O modelo CSV está disponível na própria tela. Campos: CGM, nome do estudante, turma, disciplina e notas do 1º, 2º e 3º trimestres. Nome e turma podem ser obtidos do cadastro pelo CGM; estudantes ausentes do cadastro precisam desses campos no arquivo.
 
 A média exige notas nos três trimestres. Zero é uma nota válida. Se faltar T1, T2 ou T3, a disciplina fica como Sem Nota (cinza). A classificação usa a média sem arredondamento: Recuperação (< 6, vermelho), Reforço (>= 6 e < 7, âmbar) e Aprofundamento (>= 7, azul). A tela e o PDF indicam quantos trimestres têm nota.
+
+O conceito geral exige também uma lista curricular confirmada por turma e ano. Selecione a turma e abra **Lista completa de disciplinas**, informe uma disciplina por linha e confirme com a matriz curricular da escola. Essa confirmação não altera notas. A opção de lista completa na importação do consolidado CSV também registra essa lista, além da substituição de disciplinas já indicada na prévia. Sem confirmação, com disciplinas faltantes ou com uma nova disciplina fora da lista, o conceito geral fica **Sem Nota**. Os conceitos individuais continuam sendo calculados normalmente. Backups anteriores continuam válidos, mas suas listas precisam ser confirmadas; não são inferidas como completas automaticamente.
+
+Abreviações conhecidas e nomes com códigos que possam duplicar uma disciplina são sinalizados antes de criar um novo registro. Confira o nome na importação e use o já cadastrado quando se tratar do mesmo componente. Não há unificação automática de notas ou de correções manuais. Duplicações antigas continuam exigindo revisão.
 
 Em **Importar notas de imagem, PDF ou planilha**, selecione uma captura PNG, JPEG ou WebP com o mesmo layout da referência: **Aluno – CGM** e dez blocos de **T1, T2, T3 e Total**. O reconhecimento lê T1, T2 e T3 no navegador. A biblioteca de leitura requer acesso à internet para carregar. Confira a captura, corrija os campos marcados com `?` e confirme os nomes das disciplinas. Use os nomes já cadastrados para atualizar uma disciplina existente. Os vínculos usam o nome, o CGM e a turma do cadastro no ano selecionado.
 

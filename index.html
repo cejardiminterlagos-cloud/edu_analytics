@@ -171,9 +171,11 @@ window.Edu = (() => {
  }
  function parseCSV(text){
   text=String(text).replace(/^\uFEFF/,'');if(!text.trim())throw Error('Arquivo CSV vazio.');
-  let quoted=false,comma=0,semi=0;
-  for(let i=0;i<text.length;i++){let c=text[i];if(c==='"'){if(quoted&&text[i+1]==='"'){i++;continue;}quoted=!quoted;}if(!quoted){if(c==='\n'||c==='\r')break;if(c===',')comma++;if(c===';')semi++;}}
-  const delimiter=semi>=comma?';':',';let rows=[],row=[],cell='',inQuotes=false,closed=false;
+  let quoted=false,comma=0,semi=0;const counts=[];
+  for(let i=0;i<text.length;i++){const c=text[i];if(c==='"'){if(quoted&&text[i+1]==='"'){i++;continue;}quoted=!quoted;}if(!quoted){if(c==='\n'||c==='\r'){counts.push([comma,semi]);comma=semi=0;if(c==='\r'&&text[i+1]==='\n')i++;}else if(c===',')comma++;else if(c===';')semi++;}}
+  counts.push([comma,semi]);
+  const score=index=>{const frequencies=new Map();for(const row of counts)if(row[index])frequencies.set(row[index],(frequencies.get(row[index])||0)+1);return Math.max(0,...frequencies.values());};
+  const delimiter=score(1)>=score(0)?';':',';let rows=[],row=[],cell='',inQuotes=false,closed=false;
   const endCell=()=>{row.push(cell);cell='';closed=false;};const endRow=()=>{endCell();if(row.some(v=>v.trim()!==''))rows.push(row);row=[];};
   for(let i=0;i<text.length;i++){
    const c=text[i];
@@ -184,7 +186,7 @@ window.Edu = (() => {
   }
   if(inQuotes)throw Error('CSV com campo entre aspas não fechado.');if(cell||row.length||closed)endRow();
   if(rows.length<1)throw Error('CSV vazio.');
-  const width=rows[0].length;rows.forEach((r,i)=>{if(r.length>width)throw Error(`Linha ${i+1}: mais colunas que o cabeçalho.`);while(r.length<width)r.push('');});return rows;
+  const width=(rows.find(r=>r.length>1)||rows[0]).length;rows.forEach((r,i)=>{if(r.length>width)throw Error(`Linha ${i+1}: mais colunas que o cabeçalho.`);while(r.length<width)r.push('');});return rows;
  }
  function csvCell(value){let s=String(value??'');if(/^[\s]*[=+@-]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';}
  const toCSV = rows => '\uFEFF'+rows.map(r=>r.map(csvCell).join(';')).join('\r\n');
@@ -262,7 +264,7 @@ window.Edu = (() => {
    if(allowNew&&entryId){candidate.rosterImportIds=[...new Set([...(candidate.rosterImportIds||[]),entryId])];}
    if(target&&allowNew&&candidate.rosterStudent===false){candidate.rosterStudent=true;changes.push({field:'rosterStudent',before:'Não localizado na relação de alunos',after:'Localizado na relação de alunos',beforeValue:false,afterValue:true});}
    const keepRoster=allowNew&&target&&(
-    (target.status===confirmedAbsence&&!r.rosterDate)||
+    (target.status===confirmedAbsence&&(!r.rosterDate||r.rosterDate<=String(target.rosterDate||'')))||
     (!r.series&&Boolean(target.series)&&!(r.status&&r.rosterDate&&r.rosterDate>String(target.rosterDate||'')))||
     (compact&&r._rosterYear&&r._rosterYear<Math.max(Number(target.rosterYear||target.rosterDate?.slice(0,4)||0),...Object.keys(target.schoolYears||{}).map(Number)))||
     (r.rosterDate&&target.rosterDate&&(r.rosterDate<target.rosterDate||
@@ -271,7 +273,7 @@ window.Edu = (() => {
    if(compact&&allowNew&&Number.isInteger(r._rosterYear)&&r.status){
     const year=String(r._rosterYear),before=candidate.schoolYears||{};
     const old=before[year]||(String(target?.rosterYear||target?.rosterDate?.slice(0,4))===year?target:null);
-    const older=old?.rosterDate&&(r.rosterDate?r.rosterDate<old.rosterDate:old.status===confirmedAbsence);
+    const older=old?.status===confirmedAbsence&&(!r.rosterDate||r.rosterDate<=String(old.rosterDate||''))||old?.rosterDate&&r.rosterDate&&r.rosterDate<old.rosterDate;
     const sameDate=old?.rosterDate&&old.rosterDate===r.rosterDate;
     if(!older&&!(old?.series&&!r.series&&!(r.rosterDate&&r.rosterDate>String(old.rosterDate||'')))&&!(sameDate&&rosterPriority(r.series,r.status)<rosterPriority(old.series,old.status))){
      const yearState={status:r.status,group:r.group||old?.group||'',series:r.series||old?.series||'',rosterDate:r.rosterDate||old?.rosterDate||''};
@@ -332,16 +334,22 @@ window.Edu = (() => {
   const level=GRADE_LEVELS[mean===null?3:mean<6?0:mean<7?1:2];
   return {mean,count,level,pointsMissing:total===null?null:18-total};
  }
- function overallGrade(records,registration,groupName,year){
+ function overallGrade(records,registration,groupName,year,curriculum=null){
   const annual=records.filter(r=>r.year===year),own=annual.filter(r=>r.registration===registration);
-  const expected=new Set([...annual.filter(r=>r.group===groupName),...own].map(r=>normalize(r.discipline)));
+  const observed=[...annual.filter(r=>r.group===groupName),...own].map(r=>normalize(r.discipline));
+  const confirmed=Array.isArray(curriculum)&&curriculum.length>0&&observed.every(key=>curriculum.some(name=>normalize(name)===key));
+  const expected=new Set([...(curriculum||[]).map(normalize),...observed]);
   const bySubject=new Map(own.map(r=>[normalize(r.discipline),r]));
   const means=[...expected].map(key=>gradeSummary(bySubject.get(key)?.notes||[null,null,null]).mean);
   const complete=means.filter(n=>n!==null).length,total=expected.size;
-  const mean=total&&complete===total?means.reduce((a,b)=>a+b,0)/total:null;
-  return {mean,complete,total,level:GRADE_LEVELS[mean===null?3:mean<6?0:mean<7?1:2]};
+  const mean=confirmed&&total&&complete===total?means.reduce((a,b)=>a+b,0)/total:null;
+  return {mean,complete,total,confirmed,level:GRADE_LEVELS[mean===null?3:mean<6?0:mean<7?1:2]};
  }
  const gradeKey=r=>JSON.stringify([r.year,r.registration,normalize(r.discipline)]);
+ function disciplineIdentity(name){
+  const key=normalize(name).replace(/\s*-\s*\d+$/,'').replace(/\./g,'').replace(/\s+/g,' ').trim();
+  return ({'ED FISICA':'EDUCACAO FISICA','EDUCACAO FIS':'EDUCACAO FISICA','ED DIGITAL':'EDUCACAO DIGITAL','ENSINO RELIG':'ENSINO RELIGIOSO','LINGUA INGLE':'LINGUA INGLESA','LINGUA PORTU':'LINGUA PORTUGUESA','LINGUA ESPAN':'LINGUA ESPANHOLA'})[key]||key;
+ }
  function validateGrades(records){
   if(!Array.isArray(records)||records.length>150000)throw Error('Base de notas inválida ou acima de 150 mil registros.');
   const seen=new Set(),students=new Map();
@@ -363,8 +371,13 @@ window.Edu = (() => {
  function mergeGrades(existing,incoming,replaceMissing=false){
   validateGrades(existing);validateGrades(incoming);
   const records=structuredClone(existing),positions=new Map(records.map((r,i)=>[gradeKey(r),i]));const identities=new Map();let added=0,updated=0;
+  const subjectNames=new Map(),subjectKey=r=>JSON.stringify([r.year,r.registration,disciplineIdentity(r.discipline)]);
+  for(const r of records)subjectNames.set(subjectKey(r),r.discipline);
   for(const r of incoming){
    const index=positions.get(gradeKey(r));
+   const previousName=subjectNames.get(subjectKey(r));
+   if(index===undefined&&previousName&&normalize(previousName)!==normalize(r.discipline))throw Error(`Possível disciplina duplicada: ${r.discipline} / ${previousName} · CGM ${r.registration}. Confira e use o nome já cadastrado para atualizar as notas. Nenhuma equivalência foi aplicada automaticamente.`);
+   subjectNames.set(subjectKey(r),r.discipline);
    if(index===undefined){positions.set(gradeKey(r),records.length);records.push(structuredClone(r));added++;}
    else{const old=records[index];records[index]={...old,...r,manual:old.manual||[false,false,false],notes:r.notes.map((n,i)=>old.manual?.[i]||n===null&&!replaceMissing?old.notes[i]:n)};updated++;}
    identities.set(JSON.stringify([r.year,r.registration]),r);
@@ -399,8 +412,10 @@ window.Edu = (() => {
  }
  function consolidatedGrades(rows){
   const studentHeaders=['NOME DO ESTUDANTE','ESTUDANTE','NOME DO ALUNO'];
-  const start=rows.findIndex(r=>normalize(r[1])==='CGM'&&studentHeaders.includes(normalize(r[2])));
+  const start=rows.findIndex(r=>normalize(r[1])==='CGM'&&studentHeaders.includes(normalize(r[2]))||normalize(r[2])==='CGM'&&studentHeaders.includes(normalize(r[1])));
   if(start<0)return null;
+  // Keep the importer's CGM/name positions stable without changing the source sheet.
+  if(normalize(rows[start][2])==='CGM')rows=rows.map(r=>[r[0],r[2],r[1],...r.slice(3)]);
   const blocks=[],header=rows[start],terms=rows[start+1]||[];
   for(let col=3;col<header.length;col++){
    if(!String(header[col]||'').trim()||normalize(header[col]).startsWith('CONSOLIDADO'))continue;
@@ -552,7 +567,7 @@ window.Edu = (() => {
 <script id="application">'use strict';
 (() => {
  const E=window.Edu, $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)], h=E.esc;
-  const KEY='eduanalytics_db_v1', CLOUD_META='eduanalytics_cloud_meta_v1', CLOUD_TABLE='edu_analytics_state', CLOUD_WORKSPACE='jardim-interlagos', CLOUD_EMAIL='cejardiminterlagos@nrecascavel.com', seed=JSON.parse($('#initial-data').textContent);
+  const KEY='eduanalytics_db_v1', CLOUD_META='eduanalytics_cloud_meta_v1', CLOUD_LOCK='eduanalytics_signed_out_v1', CLOUD_TABLE='edu_analytics_state', CLOUD_WORKSPACE='jardim-interlagos', CLOUD_EMAIL='cejardiminterlagos@nrecascavel.com', seed=JSON.parse($('#initial-data').textContent);
   const SUPABASE_URL='https://djrumtxagxkmluuxbrfd.supabase.co', SUPABASE_PUBLISHABLE_KEY='sb_publishable_WtpvNtDKMrILOSG1WEB-xQ_wzK3p2-F';
   let cloudClient=null,cloudUser=null,cloudRevision=null,cloudReady=false,cloudBlocked=false,cloudQueue=Promise.resolve(),cloudSaveId=0,cloudConflict=null,cloudAuthPromise=null,cloudAuthMode='signin';
   try{if(window.supabase?.createClient)cloudClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});}catch{}
@@ -564,6 +579,10 @@ window.Edu = (() => {
  function validateDB(v){
   if(Array.isArray(v?.students)&&v.students.some(s=>s?.foreignOrigin!=null&&(typeof s.foreignOrigin!=='string'||s.foreignOrigin&&!/^[A-Z]{2}$/.test(s.foreignOrigin))))throw Error('País de origem inválido no backup.');
   if(v?.grades!==undefined)E.validateGrades(v.grades);
+  if(v?.gradeCurricula!==undefined){
+   const keys=new Set();if(!Array.isArray(v.gradeCurricula)||v.gradeCurricula.length>10000)throw Error('Listas de disciplinas inválidas.');
+   for(const c of v.gradeCurricula){if(!c||!Number.isInteger(c.year)||c.year<2000||c.year>2100||typeof c.group!=='string'||!c.group.trim()||c.group.length>200||!Array.isArray(c.disciplines)||!c.disciplines.length||c.disciplines.length>100||c.disciplines.some(d=>typeof d!=='string'||!d.trim()||d.length>200)||new Set(c.disciplines.map(E.normalize)).size!==c.disciplines.length)throw Error('Lista de disciplinas inválida.');const key=JSON.stringify([c.year,E.normalize(c.group)]);if(keys.has(key))throw Error('Lista de disciplinas duplicada.');keys.add(key);}
+  }
   if(v?.pendingImports!=null&&(!Array.isArray(v.pendingImports)||v.pendingImports.some(file=>
    !file||typeof file.id!=='string'||typeof file.file!=='string'||!['roster','frequency','enrollment','general'].includes(file.kind)||
    !Array.isArray(file.pending)||file.pending.some(row=>!row||!Number.isInteger(row._line)||row._line<1)
@@ -644,10 +663,10 @@ window.Edu = (() => {
   }
   function cloudMessage(text,state=''){$('#cloud-message').textContent=text;$('#cloud-message').dataset.state=state;}
   function cloudAuthError(error){if(error?.code==='email_not_confirmed')return 'Esta conta ainda não foi confirmada; o Supabase não liberou o acesso. Verifique spam e a caixa institucional. Se a mensagem não chegar, o projeto precisa de SMTP personalizado no Supabase.';if(error?.code==='invalid_credentials')return 'O Supabase recusou o e-mail ou a senha. Criar usuário novamente não redefine a senha; se esta conta já existe, use a senha cadastrada ou peça ao administrador para redefini-la no Supabase.';if(error?.code==='over_request_rate_limit')return 'Muitas tentativas em pouco tempo. Aguarde alguns minutos e tente novamente.';return error?.message||'Falha de autenticação sem detalhe informado pelo Supabase.';}
-  function showCloudGate(text){$('#cloud-gate').hidden=false;$('#cloud-login').hidden=!!cloudConflict;$('#cloud-conflict').hidden=!cloudConflict;if(text)cloudMessage(text);}
+  function showCloudGate(text){$('#cloud-gate').hidden=false;$('[data-action=cloud-local-only]').hidden=localStorage.getItem(CLOUD_LOCK)==='1';$('#cloud-login').hidden=!!cloudConflict;$('#cloud-conflict').hidden=!cloudConflict;if(text)cloudMessage(text);}
   function hideCloudGate(){ $('#cloud-gate').hidden=true;$('#cloud-login').hidden=false;$('#cloud-conflict').hidden=true; }
-  function useLocalOnly(){cloudReady=false;cloudBlocked=false;hideCloudGate();render();cloudStatus('Modo local: alterações não sincronizadas.','error');}
-  function blankDB(v){return !v.students.length&&!v.charges.length&&!v.imports.length&&!(v.pendingImports||[]).length&&!Object.keys(v.calendars||{}).length&&!(v.calendarHistory||[]).length&&!v.enrollment&&!(v.grades||[]).length;}
+  function useLocalOnly(){if(cloudAuthPromise){notify('Aguarde a leitura inicial da nuvem antes de abrir o modo local.',true);return;}if(localStorage.getItem(CLOUD_LOCK)==='1'){showCloudGate('Entre novamente para abrir os dados preservados neste navegador.');return;}cloudReady=false;cloudBlocked=false;hideCloudGate();render();cloudStatus('Modo local: alterações não sincronizadas.','error');}
+  function blankDB(v){return !v.students.length&&!v.charges.length&&!v.imports.length&&!(v.pendingImports||[]).length&&!Object.keys(v.calendars||{}).length&&!(v.calendarHistory||[]).length&&!v.enrollment&&!(v.grades||[]).length&&!(v.gradeCurricula||[]).length;}
   function stableJSON(v){if(Array.isArray(v))return'['+v.map(stableJSON).join(',')+']';if(v&&typeof v==='object')return'{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+stableJSON(v[k])).join(',')+'}';return JSON.stringify(v);}
   async function hashDB(v){const text=stableJSON(v),bytes=new TextEncoder().encode(text);if(globalThis.crypto?.subtle){const hash=await crypto.subtle.digest('SHA-256',bytes);return [...new Uint8Array(hash)].map(x=>x.toString(16).padStart(2,'0')).join('');}let h=2166136261;for(const c of text)h=Math.imul(h^c.charCodeAt(0),16777619);return(h>>>0).toString(16);}
   function readCloudMeta(){try{return JSON.parse(localStorage.getItem(CLOUD_META)||'null');}catch{return null;}}
@@ -695,6 +714,7 @@ window.Edu = (() => {
    return snapshot.grades?.length?await updateCloud(snapshot,Number(data.revision),{...snapshot,grades:[]}):data;
   }
   async function updateCloud(snapshot,expectedRevision,base=cloudBase){
+   if(!cloudUser)throw Error('Entre novamente antes de sincronizar.');
    if(!base)throw Error('Sincronize o painel antes de enviar alterações.');
    const changes=cloudChanges(base,snapshot);
    if(!Object.keys(changes.p_fields).length&&!changes.p_removed_fields.length&&!changes.p_students.length&&!changes.p_removed_students.length&&!changes.p_grades.length&&!changes.p_removed_grades.length)return {revision:expectedRevision,updated_at:cloudUpdatedAt};
@@ -705,21 +725,23 @@ window.Edu = (() => {
    if(error)throw error;
    return data;
   }
-  async function activateCloud(row){const next=validateDB(clone(row.payload));await persistLocal(next);db=next;cloudRevision=Number(row.revision);cloudReady=true;cloudBlocked=false;cloudConflict=null;await storeCloudMeta(db,cloudRevision,row.updated_at);hideCloudGate();render();cloudStatus('Nuvem sincronizada · '+cloudUser.email,'ok');}
+  async function activateCloud(row){if(!cloudUser)return;const next=validateDB(clone(row.payload));await persistLocal(next);if(!cloudUser)return;db=next;cloudRevision=Number(row.revision);cloudReady=true;cloudBlocked=false;cloudConflict=null;await storeCloudMeta(db,cloudRevision,row.updated_at);localStorage.removeItem(CLOUD_LOCK);hideCloudGate();render();cloudStatus('Nuvem sincronizada · '+cloudUser.email,'ok');}
   function enterCloudConflict(remote,local){cloudConflict={remote,local:clone(local)};cloudReady=false;cloudBlocked=true;$('#cloud-login').hidden=true;$('#cloud-conflict').hidden=false;$('#cloud-conflict-summary').textContent=`Este dispositivo tem ${local.students.filter(s=>s.rosterStudent!==false).length} aluno(s); a nuvem tem ${remote.payload.students.filter(s=>s.rosterStudent!==false).length}. Escolha qual versão manter. A outra não será apagada sem sua escolha.`;showCloudGate('Sincronização pausada para evitar sobrescrever dados.');cloudStatus('Conflito: escolha uma versão para continuar.','error');}
-  async function uploadLocal(snapshot,expectedRevision,base=cloudBase){const result=await updateCloud(snapshot,expectedRevision,base);if(!result){const latest=await fetchCloudRow();if(latest)enterCloudConflict(latest,snapshot);else throw Error('A base na nuvem foi removida durante a sincronização.');return false;}cloudRevision=Number(result.revision);cloudReady=true;cloudBlocked=false;cloudConflict=null;await storeCloudMeta(snapshot,cloudRevision,result.updated_at);hideCloudGate();cloudStatus('Nuvem sincronizada · '+cloudUser.email,'ok');return true;}
-  async function reconcileCloud(){if(storageError)throw Error(storageError);const local=db,localHash=await hashDB(local),meta=readCloudMeta();let remote=await fetchCloudRow();
-   if(!remote){try{remote=await insertCloud(local);remote={...remote,payload:local};cloudRevision=Number(remote.revision);cloudReady=true;await storeCloudMeta(local,cloudRevision,remote.updated_at);hideCloudGate();render();cloudStatus('Nuvem sincronizada · '+cloudUser.email,'ok');return;}catch(err){if(err.code!=='23505')throw err;remote=await fetchCloudRow();if(!remote)throw err;}}
-   const cloudData=validateDB(clone(remote.payload)),remoteHash=await hashDB(cloudData);if(localHash===remoteHash||blankDB(local)||meta?.hash===localHash){await activateCloud({...remote,payload:cloudData});return;}
+  async function uploadLocal(snapshot,expectedRevision,base=cloudBase){const result=await updateCloud(snapshot,expectedRevision,base);if(!cloudUser)return false;if(!result){const latest=await fetchCloudRow();if(latest)enterCloudConflict(latest,snapshot);else throw Error('A base na nuvem foi removida durante a sincronização.');return false;}cloudRevision=Number(result.revision);cloudReady=true;cloudBlocked=false;cloudConflict=null;await storeCloudMeta(snapshot,cloudRevision,result.updated_at);localStorage.removeItem(CLOUD_LOCK);hideCloudGate();cloudStatus('Nuvem sincronizada · '+cloudUser.email,'ok');return true;}
+  async function reconcileCloud(){if(storageError)throw Error(storageError);const local=db,localHash=await hashDB(local),meta=readCloudMeta();let remote=await fetchCloudRow();if(!cloudUser)return;
+   if(!remote){try{remote=await insertCloud(local);remote={...remote,payload:local};cloudRevision=Number(remote.revision);cloudReady=true;await storeCloudMeta(local,cloudRevision,remote.updated_at);localStorage.removeItem(CLOUD_LOCK);hideCloudGate();render();cloudStatus('Nuvem sincronizada · '+cloudUser.email,'ok');return;}catch(err){if(err.code!=='23505')throw err;remote=await fetchCloudRow();if(!remote)throw err;}}
+   const cloudData=validateDB(clone(remote.payload)),remoteHash=await hashDB(cloudData);if(db!==local)throw Error('Os dados locais mudaram durante a leitura. Sincronize novamente.');if(localHash===remoteHash||blankDB(local)||meta?.hash===localHash){await activateCloud({...remote,payload:cloudData});return;}
    if(meta&&Number(meta.revision)===Number(remote.revision)){await uploadLocal(local,Number(remote.revision),remote.payload);render();return;}
    enterCloudConflict({...remote,payload:cloudData},local);
   }
-  function queueCloudSave(snapshot){const id=++cloudSaveId,copy=clone(snapshot);cloudStatus('Salvando alterações na nuvem…','pending');cloudQueue=cloudQueue.catch(()=>{}).then(async()=>{if(!cloudReady||cloudBlocked||id!==cloudSaveId)return;try{const saved=await updateCloud(copy,cloudRevision);if(!saved){const remote=await fetchCloudRow();if(remote)enterCloudConflict(remote,db);else throw Error('O registro da nuvem não foi encontrado.');return;}cloudRevision=Number(saved.revision);await storeCloudMeta(copy,cloudRevision,saved.updated_at);if(id===cloudSaveId)cloudStatus('Nuvem sincronizada · '+cloudUser.email,'ok');}catch(err){cloudBlocked=true;cloudStatus('Falha na nuvem. As alterações locais foram mantidas; tente sincronizar novamente.','error');notify('Não foi possível sincronizar com a nuvem: '+err.message,true);}});}
-  async function syncCloudNow(){if(storageError||savingLocal){notify(storageError||'Aguarde a gravação local.',true);return;}if(!cloudUser){showCloudGate('Entre com o e-mail institucional para sincronizar.');return;}if(cloudConflict){showCloudGate('Escolha qual versão manter antes de continuar.');return;}await cloudQueue.catch(()=>{});cloudBlocked=false;try{const row=await fetchCloudRow();if(!row){const inserted=await insertCloud(db);cloudRevision=Number(inserted.revision);await storeCloudMeta(db,cloudRevision,inserted.updated_at);cloudReady=true;cloudStatus('Nuvem sincronizada · '+cloudUser.email,'ok');return;}if(cloudRevision!=null&&Number(row.revision)!==cloudRevision){const local=db,meta=readCloudMeta();if(meta?.hash===await hashDB(local))await activateCloud(row);else enterCloudConflict(row,local);return;}cloudReady=true;cloudBlocked=false;const ok=await uploadLocal(db,Number(row.revision),row.payload);if(ok)notify('Dados sincronizados com a nuvem.');}catch(err){cloudBlocked=true;cloudStatus('Falha na nuvem: '+err.message,'error');notify('Falha ao sincronizar: '+err.message,true);}}
+  function queueCloudSave(snapshot){const id=++cloudSaveId,copy=clone(snapshot);cloudStatus('Salvando alterações na nuvem…','pending');cloudQueue=cloudQueue.catch(()=>{}).then(async()=>{if(!cloudReady||cloudBlocked||id!==cloudSaveId)return;try{const saved=await updateCloud(copy,cloudRevision);if(!cloudUser)return;if(!saved){const remote=await fetchCloudRow();if(remote)enterCloudConflict(remote,db);else throw Error('O registro da nuvem não foi encontrado.');return;}cloudRevision=Number(saved.revision);await storeCloudMeta(copy,cloudRevision,saved.updated_at);if(id===cloudSaveId)cloudStatus('Nuvem sincronizada · '+cloudUser.email,'ok');}catch(err){cloudBlocked=true;cloudStatus('Falha na nuvem. As alterações locais foram mantidas; tente sincronizar novamente.','error');notify('Não foi possível sincronizar com a nuvem: '+err.message,true);}});}
+  async function syncCloudNow(){if(storageError||savingLocal){notify(storageError||'Aguarde a gravação local.',true);return;}if(!cloudUser){showCloudGate('Entre com o e-mail institucional para sincronizar.');return;}if(cloudConflict){showCloudGate('Escolha qual versão manter antes de continuar.');return;}if(cloudAuthPromise){await cloudAuthPromise;return;}await cloudQueue.catch(()=>{});if(!cloudUser||cloudConflict)return;cloudBlocked=false;try{if(cloudRevision===null||!cloudBase){await handleCloudSession(cloudUser);return;}const row=await fetchCloudRow();if(!cloudUser)return;if(!row){const inserted=await insertCloud(db);cloudRevision=Number(inserted.revision);await storeCloudMeta(db,cloudRevision,inserted.updated_at);cloudReady=true;cloudStatus('Nuvem sincronizada · '+cloudUser.email,'ok');return;}if(cloudRevision!=null&&Number(row.revision)!==cloudRevision){const local=db,meta=readCloudMeta();if(meta?.hash===await hashDB(local))await activateCloud(row);else enterCloudConflict(row,local);return;}cloudReady=true;cloudBlocked=false;const ok=await uploadLocal(db,Number(row.revision),row.payload);if(ok)notify('Dados sincronizados com a nuvem.');}catch(err){cloudBlocked=true;cloudStatus('Falha na nuvem: '+err.message,'error');notify('Falha ao sincronizar: '+err.message,true);}}
   async function useCloudVersion(){if(!cloudConflict)return;const{remote,local}=cloudConflict;download('eduanalytics-backup-local-'+E.today()+'.json',JSON.stringify(local,null,2),'application/json');await activateCloud(remote);notify('Dados da nuvem carregados; backup local baixado.');}
   async function useLocalVersion(){if(!cloudConflict)return;if(!confirm('Substituir a versão compartilhada na nuvem pelos dados deste dispositivo? A versão da nuvem será substituída.'))return;const{remote,local}=cloudConflict;try{if(!await uploadLocal(local,Number(remote.revision),remote.payload))return;db=local;render();notify('Dados deste dispositivo enviados à nuvem.');}catch(err){cloudStatus('Não foi possível substituir a versão da nuvem: '+err.message,'error');}}
-  async function handleCloudSession(user){if(!user){cloudUser=null;cloudReady=false;showCloudGate('Entre com o e-mail institucional para continuar.');return;}if(String(user.email||'').trim().toLowerCase()!==CLOUD_EMAIL){await cloudClient.auth.signOut();cloudUser=null;cloudReady=false;showCloudGate('Acesso restrito ao e-mail institucional autorizado.');return;}if(cloudUser?.id===user.id&&cloudReady)return;if(cloudAuthPromise)return cloudAuthPromise;cloudAuthPromise=(async()=>{cloudUser=user;cloudReady=false;showCloudGate('Carregando a base compartilhada…');try{await reconcileCloud();}catch(err){cloudReady=false;cloudStatus('Não foi possível conectar à nuvem.','error');showCloudGate('Falha ao conectar: '+err.message);}})();try{await cloudAuthPromise;}finally{cloudAuthPromise=null;}}
-  async function initializeCloud(){if(!cloudClient){showCloudGate('A biblioteca de conexão não carregou. Verifique a internet e recarregue a página.');cloudStatus('Biblioteca Supabase indisponível.','error');return;}cloudClient.auth.onAuthStateChange((event,session)=>{setTimeout(()=>{if(session)handleCloudSession(session.user);else if(event==='SIGNED_OUT'){cloudUser=null;cloudReady=false;cloudBlocked=false;cloudConflict=null;showCloudGate('Sessão encerrada. Entre novamente para abrir os dados.');cloudStatus('Sessão encerrada; modo local até novo login.','pending');}},0);});try{const{data,error}=await cloudClient.auth.getSession();if(error)throw error;if(data.session)await handleCloudSession(data.session.user);else showCloudGate('Entre com o e-mail institucional para continuar.');}catch(err){showCloudGate('Falha na autenticação: '+err.message);cloudStatus('Falha na autenticação.','error');}}
+  async function handleCloudSession(user){if(!user){cloudUser=null;cloudReady=false;cloudRevision=null;cloudBase=null;showCloudGate('Entre com o e-mail institucional para continuar.');return;}if(String(user.email||'').trim().toLowerCase()!==CLOUD_EMAIL){await cloudClient.auth.signOut();cloudUser=null;cloudReady=false;showCloudGate('Acesso restrito ao e-mail institucional autorizado.');return;}if(cloudUser?.id===user.id&&cloudReady)return;if(cloudAuthPromise)return cloudAuthPromise;cloudAuthPromise=(async()=>{cloudUser=user;cloudReady=false;showCloudGate('Carregando a base compartilhada…');try{await reconcileCloud();}catch(err){cloudReady=false;cloudStatus('Não foi possível conectar à nuvem.','error');showCloudGate('Falha ao conectar: '+err.message);}})();try{await cloudAuthPromise;}finally{cloudAuthPromise=null;}}
+  function lockAfterSignOut(){localStorage.setItem(CLOUD_LOCK,'1');cloudUser=null;cloudReady=false;cloudRevision=null;cloudBase=null;cloudBlocked=false;cloudConflict=null;$('#print-area').replaceChildren();$('#dossier-body').replaceChildren();render();showCloudGate('Sessão encerrada. Entre novamente para abrir os dados preservados neste navegador.');cloudStatus('Sessão encerrada. Cópia local preservada.','pending');}
+  window.addEventListener('storage',event=>{if(event.key===CLOUD_LOCK&&event.newValue==='1')lockAfterSignOut();});
+  async function initializeCloud(){if(!cloudClient){showCloudGate('A biblioteca de conexão não carregou. Verifique a internet e recarregue a página.');cloudStatus('Biblioteca Supabase indisponível.','error');return;}cloudClient.auth.onAuthStateChange((event,session)=>{setTimeout(()=>{if(session)handleCloudSession(session.user);else if(event==='SIGNED_OUT'){lockAfterSignOut();}},0);});try{const{data,error}=await cloudClient.auth.getSession();if(error)throw error;if(data.session)await handleCloudSession(data.session.user);else showCloudGate('Entre com o e-mail institucional para continuar.');}catch(err){showCloudGate('Falha na autenticação: '+err.message);cloudStatus('Falha na autenticação.','error');}}
   function setCloudAuthMode(mode){cloudAuthMode=mode;const signup=mode==='signup';$('#cloud-password-confirm-row').hidden=!signup;$('#cloud-password-confirm').hidden=!signup;$('#cloud-password-confirm').required=signup;$('#cloud-password').autocomplete=signup?'new-password':'current-password';$('#cloud-auth-submit').textContent=signup?'Criar usuário':'Entrar';$('#cloud-auth-toggle').textContent=signup?'Já tenho acesso · entrar':'Primeiro acesso? Criar usuário';cloudMessage(signup?'Cadastre uma senha para o e-mail institucional autorizado.':'Informe sua senha para entrar.');}
   async function requestCloudLogin(){const email=$('#cloud-email').value.trim().toLowerCase(),password=$('#cloud-password').value;if(email!==CLOUD_EMAIL)throw Error('Use o e-mail institucional autorizado.');if(location.origin!=='https://eduanalytics-seven.vercel.app')throw Error('Abra a versão publicada em https://eduanalytics-seven.vercel.app para entrar na nuvem.');if(!cloudClient)throw Error('A biblioteca Supabase não está disponível.');if(cloudAuthMode==='signup'){if(password.length<8)throw Error('Use uma senha com pelo menos 8 caracteres.');if(password!==$('#cloud-password-confirm').value)throw Error('As senhas não coincidem.');const{data,error}=await cloudClient.auth.signUp({email,password,options:{emailRedirectTo:'https://eduanalytics-seven.vercel.app/'}});if(error)throw error;if(data.session)await handleCloudSession(data.session.user);else{setCloudAuthMode('signin');const message='A conta institucional já existe e está confirmada. Este cadastro não altera a senha e não enviará outra confirmação. Entre com a senha anterior. Se você não a lembra, o administrador precisa redefini-la no Supabase; redefinição por e-mail exige SMTP configurado.';cloudMessage(message,'pending');cloudStatus('Conta existente: entre com a senha anterior ou peça redefinição ao administrador.','pending');}return;}const{data,error}=await cloudClient.auth.signInWithPassword({email,password});if(error){const message=cloudAuthError(error);cloudStatus(message,'error');throw Error(message);}await handleCloudSession(data.user);}
  function notify(text,error=false){const el=$('#notice');el.textContent=text;el.className=error?'error':'';el.hidden=false;clearTimeout(notify.timer);notify.timer=setTimeout(()=>el.hidden=true,error?14000:6500);}
@@ -873,17 +895,29 @@ window.Edu = (() => {
   const rows=[...students.values()].filter(s=>(!gradeFilters.search||E.normalize(s.name+' '+s.registration).includes(E.normalize(gradeFilters.search)))&&(!gradeFilters.level||subjects.some(([key])=>E.gradeSummary(s.grades.get(key)?.notes||[null,null,null]).level.key===gradeFilters.level))).sort((a,b)=>a.group.localeCompare(b.group,'pt-BR',{numeric:true})||a.name.localeCompare(b.name,'pt-BR'));
   return {rows,subjects};
  }
+ const gradeCurriculum=(className,year)=>(db.gradeCurricula||[]).find(c=>c.year===year&&E.normalize(c.group)===E.normalize(className))?.disciplines;
+ let overallCache={};
  function studentOverall(student,year=db.referenceYear){
-  const registered=db.students.find(r=>r.registration===student.registration);
-  const annual=registered?.schoolYears?.[year];
+  if(overallCache.db!==db)overallCache={db,years:new Map(),students:new Map(db.students.map(s=>[s.registration,s]))};
+  if(!overallCache.years.has(year)){
+   const records=activeGradeRows(year),own=new Map(),subjects=new Map();
+   for(const r of db.grades||[])if(r.year===year){if(!own.has(r.registration))own.set(r.registration,[]);own.get(r.registration).push(r);}
+   for(const r of records){if(!subjects.has(r.group))subjects.set(r.group,new Map());subjects.get(r.group).set(E.normalize(r.discipline),r.discipline);}
+   overallCache.years.set(year,{own,subjects,results:new Map()});
+  }
+  const registered=overallCache.students.get(student.registration),annual=registered?.schoolYears?.[year];
   const className=annual?.group?group({...registered,...annual}):year===db.referenceYear&&registered?group(studentForReferenceYear(registered)):student.group||'';
-  const records=activeGradeRows(year);
-  const own=(db.grades||[]).filter(r=>r.year===year&&r.registration===student.registration);
-  return E.overallGrade(records.some(r=>r.registration===student.registration)?records:own,student.registration,className,year);
+  const cache=overallCache.years.get(year),key=JSON.stringify([student.registration,className]);
+  if(!cache.results.has(key)){
+   const own=(cache.own.get(student.registration)||[]).map(r=>({...r,group:className}));
+   const subjects=[...(cache.subjects.get(className)?.values()||[])].map(discipline=>({year,group:className,discipline,registration:null}));
+   cache.results.set(key,E.overallGrade([...own,...subjects],student.registration,className,year,gradeCurriculum(className,year)));
+  }
+  return cache.results.get(key);
  }
  function overallTag(student,year=db.referenceYear){
   const m=studentOverall(student,year);
-  return `<span class="tag grade-${m.level.key}" title="${m.complete}/${m.total} disciplinas completas · Média geral ${gradeFormat(m.mean)}">Geral: ${h(m.level.label)}${m.mean===null?'': ' · '+gradeFormat(m.mean)}</span>`;
+  return `<span class="tag grade-${m.level.key}" title="${m.confirmed?'Lista de disciplinas confirmada':'Confirme a lista completa de disciplinas da turma'} · ${m.complete}/${m.total} disciplinas completas · Média geral ${gradeFormat(m.mean)}">Geral: ${h(m.level.label)}${m.mean===null?'': ' · '+gradeFormat(m.mean)}</span>`;
  }
  function studentName(student,tag=true){
   const known=student.id?byId(student.id):db.students.find(s=>s.registration===student.registration);
@@ -951,7 +985,7 @@ window.Edu = (() => {
  function dossierGrades(student){
   dossierGradeYear??=db.referenceYear;
   const years=[...new Set([db.referenceYear,...(db.grades||[]).filter(r=>r.registration===student.registration).map(r=>r.year)])].sort((a,b)=>b-a),records=individualGrades(student),selected=records.filter(r=>!dossierGradeLevel||E.gradeSummary(r.notes).level.key===dossierGradeLevel);
-  return `${overallTag(student,dossierGradeYear)}<p class="notes">${studentOverall(student,dossierGradeYear).complete}/${studentOverall(student,dossierGradeYear).total} disciplinas completas. Conceito geral usa todas as disciplinas da turma, independentemente do filtro.</p><div class="toolbar"><label>Ano letivo<select id="dossier-grade-year">${years.map(y=>option(String(y),String(y),String(dossierGradeYear))).join('')}</select></label><button class="secondary" data-action="student-grades-pdf" ${records.length?'':'disabled'}>Exportar relatório individual</button></div><div class="actions"><button class="secondary" data-action="student-grade-filter" data-value="" aria-pressed="${!dossierGradeLevel}">Todas · ${records.length}</button>${E.GRADE_LEVELS.map(l=>`<button class="secondary grade-${l.key}" data-action="student-grade-filter" data-value="${l.key}" aria-pressed="${dossierGradeLevel===l.key}">${h(l.label)} · ${records.filter(r=>E.gradeSummary(r.notes).level.key===l.key).length}</button>`).join('')}</div><p class="notes">${records.length} disciplinas registradas. Disciplinas sem registro não entram na contagem.</p><div class="table-wrap">${individualGradeTable(selected)}</div>${manualGradeForm(student)}${gradeMethod()}<details><summary>Origem das notas</summary>${[...new Set(records.map(r=>r.source||'Importação anterior'))].map(source=>`<p class="notes">${h(source)}</p>`).join('')}<p class="notes">Os documentos originais não são armazenados.</p></details>`;
+  return `${overallTag(student,dossierGradeYear)}<p class="notes">${studentOverall(student,dossierGradeYear).complete}/${studentOverall(student,dossierGradeYear).total} disciplinas completas. Conceito geral exige a lista completa de disciplinas confirmada no painel da turma e os três trimestres, independentemente do filtro.</p><div class="toolbar"><label>Ano letivo<select id="dossier-grade-year">${years.map(y=>option(String(y),String(y),String(dossierGradeYear))).join('')}</select></label><button class="secondary" data-action="student-grades-pdf" ${records.length?'':'disabled'}>Exportar relatório individual</button></div><div class="actions"><button class="secondary" data-action="student-grade-filter" data-value="" aria-pressed="${!dossierGradeLevel}">Todas · ${records.length}</button>${E.GRADE_LEVELS.map(l=>`<button class="secondary grade-${l.key}" data-action="student-grade-filter" data-value="${l.key}" aria-pressed="${dossierGradeLevel===l.key}">${h(l.label)} · ${records.filter(r=>E.gradeSummary(r.notes).level.key===l.key).length}</button>`).join('')}</div><p class="notes">${records.length} disciplinas registradas. Disciplinas sem registro não entram na contagem.</p><div class="table-wrap">${individualGradeTable(selected)}</div>${manualGradeForm(student)}${gradeMethod()}<details><summary>Origem das notas</summary>${[...new Set(records.map(r=>r.source||'Importação anterior'))].map(source=>`<p class="notes">${h(source)}</p>`).join('')}<p class="notes">Os documentos originais não são armazenados.</p></details>`;
  }
  let manualGradeBase=null;
  function manualGradeRow(discipline,record){
@@ -1002,11 +1036,20 @@ window.Edu = (() => {
   window.print();
  }
 
+ function setGradeCurriculum(next,curriculum){
+  next.gradeCurricula=(next.gradeCurricula||[]).filter(c=>c.year!==curriculum.year||E.normalize(c.group)!==E.normalize(curriculum.group));
+  next.gradeCurricula.push(curriculum);validateDB(next);
+ }
+ function gradeCurriculumForm(groupName,records){
+  const confirmed=gradeCurriculum(groupName,db.referenceYear),names=[...new Map([...(confirmed||[]),...records.map(r=>r.discipline)].map(name=>[E.normalize(name),name])).values()];
+  return `<details><summary>Lista completa de disciplinas · ${confirmed?'conferir':'confirmação pendente'}</summary><form id="grade-curriculum"><p>Confira com a matriz curricular da turma. A lista será usada somente para o conceito geral de ${h(groupName)} em ${db.referenceYear}. Esta confirmação não altera nem apaga notas.</p><label>Uma disciplina por linha<textarea id="grade-curriculum-subjects" rows="6" required>${h(names.join('\n'))}</textarea></label><label class="check"><input type="checkbox" required>Conferi todas as disciplinas previstas para esta turma e ano.</label><button type="submit">Confirmar lista de disciplinas</button></form></details>`;
+ }
  function gradeClassDashboard(groupName,records){
   if(!groupName)return '';
   const grades=records.filter(r=>r.group===groupName);
   const registrations=new Set([...grades.map(r=>r.registration),...rosterStudents().filter(s=>group(s)===groupName).map(s=>s.registration)].filter(Boolean));
   const subjects=new Map();
+  for(const name of gradeCurriculum(groupName,db.referenceYear)||[])subjects.set(E.normalize(name),{name,notes:new Map()});
   for(const r of grades){
    const key=E.normalize(r.discipline);
    if(!subjects.has(key))subjects.set(key,{name:r.discipline,notes:new Map()});
@@ -1017,8 +1060,8 @@ window.Edu = (() => {
    return `<tr><th scope="row">${h(name)}</th>${E.GRADE_LEVELS.map(l=>`<td class="grade-${l.key}">${counts[l.key]}</td>`).join('')}</tr>`;
   });
   const generalCounts=Object.fromEntries(E.GRADE_LEVELS.map(l=>[l.key,0]));
-  for(const registration of registrations)generalCounts[E.overallGrade(records,registration,groupName,db.referenceYear).level.key]++;
-  return `<section class="panel"><h2>Diagnóstico da turma · ${h(groupName)}</h2><h3>Conceito geral dos estudantes</h3><div class="grade-legend">${E.GRADE_LEVELS.map(l=>`<span class="grade-${l.key}">${h(l.label)}: ${generalCounts[l.key]}</span>`).join('')}</div><p>${registrations.size} estudantes por disciplina. Sem Nota inclui quem ainda não tem os três trimestres registrados.</p>${lines.length?`<div class="table-wrap"><table><thead><tr><th scope="col">Disciplina</th>${E.GRADE_LEVELS.map(l=>`<th scope="col">${h(l.label)}</th>`).join('')}</tr></thead><tbody>${lines.join('')}</tbody></table></div>`:'<p>Nenhuma disciplina com registro nesta turma.</p>'}</section>`;
+  for(const registration of registrations)generalCounts[studentOverall({registration,group:groupName}).level.key]++;
+  return `<section class="panel"><h2>Diagnóstico da turma · ${h(groupName)}</h2><h3>Conceito geral dos estudantes</h3><div class="grade-legend">${E.GRADE_LEVELS.map(l=>`<span class="grade-${l.key}">${h(l.label)}: ${generalCounts[l.key]}</span>`).join('')}</div><p>${registrations.size} estudantes por disciplina. Sem Nota inclui quem ainda não tem os três trimestres ou a lista completa de disciplinas confirmada.</p>${gradeCurriculumForm(groupName,grades)}${lines.length?`<div class="table-wrap"><table><thead><tr><th scope="col">Disciplina</th>${E.GRADE_LEVELS.map(l=>`<th scope="col">${h(l.label)}</th>`).join('')}</tr></thead><tbody>${lines.join('')}</tbody></table></div>`:'<p>Nenhuma disciplina com registro nesta turma.</p>'}</section>`;
  }
  function renderGradeImage(){
   const rows=gradeImport.imageRows;
@@ -1110,6 +1153,7 @@ window.Edu = (() => {
   const removedKeys=new Set(removed.map(E.gradeKey));
   setGradePreview(incoming,true,existing.filter(r=>!removedKeys.has(E.gradeKey(r))));
   if(replaceSubjects){
+   gradePreview.curricula=[...new Set(incoming.map(r=>r.group))].map(group=>({year:gradeImport.year,group,disciplines:[...new Set(incoming.filter(r=>r.group===group).map(r=>r.discipline))]}));
    const details=(rows,label)=>rows.length?`<details><summary>${rows.length} ${label}</summary><ul>${rows.map(r=>`<li>${h(r.group)} · ${h(r.name)} (CGM ${h(r.registration)}) · ${h(r.discipline)} · ${r.notes.map(gradeFormat).join(' / ')}</li>`).join('')}</ul></details>`:'';
    $('#grades-preview').insertAdjacentHTML('afterbegin',`<p><strong>Substituição de disciplinas: ${removed.length} registro(s) a remover no ano ${gradeImport.year}.</strong></p>${details(removed,'registros antigos a remover')}${details(protectedRows,'registros fora do CSV mantidos por proteção manual. Eles continuam na matriz e no cálculo.')}`);
   }
@@ -1145,6 +1189,7 @@ window.Edu = (() => {
 
 
  function render(){
+  if(localStorage.getItem(CLOUD_LOCK)==='1'&&!cloudReady){$('#view').replaceChildren();$('#dossier').close();return;}
   route=location.hash.slice(1)||'painel';if(!['painel','alunos','frequencia','seliga','cobrancas','importar','calendario'].includes(route))route='painel';
   $$('nav a').forEach(a=>a.classList.toggle('active',a.hash==='#'+route));$('#reference-year').value=db.referenceYear;
   if(storageError){$('#persistent-warning').hidden=false;$('#persistent-warning').className='message';$('#persistent-warning').textContent=storageError;}
@@ -2039,7 +2084,7 @@ window.Edu = (() => {
   if(a==='grades-apply'){
    if(!gradePreview||gradePreview.base!==db)throw Error('Confira novamente antes de aplicar. A base foi atualizada.');
    btn.disabled=true;
-   try{const next=clone(db);next.grades=gradePreview.records;next.referenceYear=gradeImport.year;await save(next);const batchId=gradeImport.batchId;
+   try{const next=clone(db);next.grades=gradePreview.records;next.referenceYear=gradeImport.year;if(gradePreview.curricula)for(const c of gradePreview.curricula)setGradeCurriculum(next,c);await save(next);const batchId=gradeImport.batchId;
    if(gradeImport.consolidated){
     const groups=[...new Set(gradePreview.incoming.map(r=>r.group))];
     gradeFilters={group:groups.length===1?groups[0]:'',discipline:'',level:'',search:''};
@@ -2048,7 +2093,7 @@ window.Edu = (() => {
    return;
   }
 
-   if(a==='delete-import'){await deleteImportedReport(btn.dataset.id);return;}if(a==='cloud-sync'){await syncCloudNow();return;}if(a==='cloud-signout'){if(cloudClient)await cloudClient.auth.signOut();return;}if(a==='cloud-local-only'){useLocalOnly();return;}if(a==='cloud-auth-toggle'){setCloudAuthMode(cloudAuthMode==='signin'?'signup':'signin');return;}if(a==='cloud-use-cloud'){await useCloudVersion();return;}if(a==='cloud-use-local'){await useLocalVersion();return;}
+   if(a==='delete-import'){await deleteImportedReport(btn.dataset.id);return;}if(a==='cloud-sync'){await syncCloudNow();return;}if(a==='cloud-signout'){if(cloudAuthPromise)await cloudAuthPromise;await cloudQueue.catch(()=>{});if(cloudClient){const {error}=await cloudClient.auth.signOut();if(error)throw error;lockAfterSignOut();}return;}if(a==='cloud-local-only'){useLocalOnly();return;}if(a==='cloud-auth-toggle'){setCloudAuthMode(cloudAuthMode==='signin'?'signup':'signin');return;}if(a==='cloud-use-cloud'){await useCloudVersion();return;}if(a==='cloud-use-local'){await useLocalVersion();return;}
   if(a==='batch-grades'){openBatchGrades(v);return;}
   if(a==='batch-preview'){previewBatch();return;}
   if(a==='foreign-apply'){await applyForeignImport();return;}
@@ -2084,6 +2129,7 @@ window.Edu = (() => {
   if(a==='event-remove'){calendarDraft.events=readEvents();calendarDraft.events.splice(Number(v),1);drawCalendarEditor();return;}
  }catch(err){notify(err.message,true);}});
   document.addEventListener('submit',async event=>{event.preventDefault();const form=event.target,button=event.submitter;try{if(button)button.disabled=true;
+   if(form.id==='grade-curriculum'){const next=clone(db),c={year:db.referenceYear,group:gradeFilters.group,disciplines:$('#grade-curriculum-subjects').value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean)};setGradeCurriculum(next,c);await save(next);render();notify('Lista de disciplinas confirmada. Notas preservadas.');return;}
 
    if(form.id==='manual-grade-form'){await saveManualGrade();return;}
    if(form.id==='grades-upload'){
