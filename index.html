@@ -1223,8 +1223,13 @@ window.Edu = (() => {
   const header=rows[0].map(E.normalize);
   const cgm=header.indexOf('CGM'),name=header.indexOf('NOME DO ESTUDANTE');
   const origin=header.includes('PAIS DE ORIGEM')?header.indexOf('PAIS DE ORIGEM'):header.indexOf('COLUNA 1');
-  if(Math.min(cgm,name,origin)<0)throw Error('O CSV precisa das colunas CGM, Nome do Estudante e País de origem (ou Coluna 1).');
-  const byName=new Map(),byId=new Map(db.students.map(s=>[s.registration,s]));
+  if(name<0||origin<0)throw Error('O CSV precisa das colunas Nome do Estudante e País de origem (ou Coluna 1). O CGM é opcional.');
+  const byName=new Map(),rosterNames=new Map(),byCgm=new Map(db.students.filter(s=>s.registration).map(s=>[s.registration,s]));
+  for(const student of db.students){
+   const key=E.normalize(student.name);
+   if(!rosterNames.has(key))rosterNames.set(key,[]);
+   rosterNames.get(key).push(student);
+  }
   for(const row of rows.slice(1)){
    const id=String(row[cgm]||'').trim(),person=E.normalize(row[name]);
    if(!/^\d{1,40}$/.test(id)||!person)continue;
@@ -1236,19 +1241,19 @@ window.Edu = (() => {
    const raw=String(row[origin]||'').trim();
    if(!raw)continue;
    const country=countryCodes.get(E.normalize(raw));
-   const ids=byName.get(E.normalize(row[name]));
-   const id=String(row[cgm]||'').trim()||(ids?.size===1?[...ids][0]:'');
-   const student=byId.get(id);
-   if(!country||!student||!E.normalize(row[name])||E.normalize(student.name)!==E.normalize(row[name])){
+   const person=E.normalize(row[name]),ids=byName.get(person),matches=rosterNames.get(person)||[];
+   const provided=String(row[cgm]||'').trim();
+   const student=provided?byCgm.get(provided):ids?.size===1?byCgm.get([...ids][0]):!ids&&matches.length===1?matches[0]:null;
+   if(!country||!student||!person||E.normalize(student.name)!==person){
     issues.push(`Linha ${index+2} · ${row[name]||'Sem nome'} · ${!country?'País não reconhecido':'Vínculo não confirmado'}`);
     continue;
    }
-   if(!candidates.has(id))candidates.set(id,new Set());
-   candidates.get(id).add(country);
+   if(!candidates.has(student))candidates.set(student,new Set());
+   candidates.get(student).add(country);
   }
   const changes=[];
-  for(const [id,codes] of candidates){
-   const student=byId.get(id),[country]=codes;
+  for(const [student,codes] of candidates){
+   const [country]=codes;
    if(codes.size>1||student.foreignOrigin&&student.foreignOrigin!==country){issues.push(student.name+' · Países divergentes. Confira na ficha.');continue;}
    if(student.foreignOrigin!==country)changes.push({id:student.id,name:student.name,country});
   }
