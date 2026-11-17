@@ -3,6 +3,10 @@ const E=window.Edu;
 const {default:assert}=await import('node:assert/strict');
 const rows=[['Título'],['Nº','CGM','NOME DO ESTUDANTE','ARTE','','','','',''],['','','','T1','T2','T3','Média','F','Grupo'],['1','123','Ana','0,0','—','7,0','','','']];
 assert.equal(E.consolidatedGrades(rows).blocks.length,1);
+for(const header of ['ESTUDANTE','NOME DO ALUNO']){
+ const variant=structuredClone(rows);variant[1][2]=header;
+ assert.deepEqual(E.consolidatedGrades(variant),E.consolidatedGrades(rows));
+}
 assert.equal(E.consolidatedGrades([['CGM','Disciplina']]),null);
 const bad=structuredClone(rows);bad[3][3]='11';assert.throws(()=>E.consolidatedGrades(bad));
 const short=structuredClone(rows);short[3].pop();assert.throws(()=>E.consolidatedGrades(short));

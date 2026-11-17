@@ -398,7 +398,8 @@ window.Edu = (() => {
   return validateGrades([...records.values()]);
  }
  function consolidatedGrades(rows){
-  const start=rows.findIndex(r=>normalize(r[1])==='CGM'&&normalize(r[2])==='NOME DO ESTUDANTE');
+  const studentHeaders=['NOME DO ESTUDANTE','ESTUDANTE','NOME DO ALUNO'];
+  const start=rows.findIndex(r=>normalize(r[1])==='CGM'&&studentHeaders.includes(normalize(r[2])));
   if(start<0)return null;
   const blocks=[],header=rows[start],terms=rows[start+1]||[];
   for(let col=3;col<header.length;col++){
