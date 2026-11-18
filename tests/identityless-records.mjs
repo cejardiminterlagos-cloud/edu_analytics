@@ -19,3 +19,12 @@ assert.equal(E.recoverStudentNames([proof,{...valid,registration:'002'}],[]).rec
 assert.equal(E.recoverStudentNames([proof,{...proof,id:'other'}],[]).recovered,0);
 assert.equal(E.recoverStudentNames([{...proof,history:[...proof.history,{confirmedIdentity:{registration:'003',name:'Outra Fonte'}}]}],[]).recovered,0);
 console.log('PASS: unidentified records excluded from active/enrollment indicators; unknown score distinct from zero; unique confirmed identities recovered without duplicates or lost IDs.');
+const blankName={...valid,id:'missing-name',registration:'003',name:''};
+const confirmation={registration:'003',name:'Nome Da Confirmacao'};
+const before=E.enrollmentSummary([blankName],{records:[confirmation]});
+assert.equal(before.outsideRoster.length,1);assert.match(before.outsideRoster[0].reason,/Identidade incompleta/);
+const repaired=E.recoverStudentNames([blankName],[],[confirmation]);
+assert.equal(repaired.recovered,1);assert.equal(repaired.students[0].id,blankName.id);
+assert.equal(E.enrollmentSummary(repaired.students,{records:[confirmation]}).count,1);
+assert.equal(E.enrollmentSummary(repaired.students,{records:[confirmation]}).outsideRoster.length,0);
+assert.equal(E.recoverStudentNames([blankName],[{registration:'003',name:'Nome Divergente'}],[confirmation]).recovered,0);

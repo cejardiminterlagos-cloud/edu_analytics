@@ -224,7 +224,7 @@ window.Edu = (() => {
    if(!student)unmatched.push(record);
    else if(!isActiveRosterStudent(student))outsideRoster.push({
     ...record,studentId:student.id,name:student.name||record.name,
-    reason:student.rosterStudent===false?'Sem vínculo com a relação por turma':student.status||'Situação não informada'
+    reason:!hasStudentIdentity(student)?'Identidade incompleta no cadastro; o nome exibido vem do arquivo de confirmação':student.rosterStudent===false?'Sem vínculo com a relação por turma':student.status||'Situação não informada'
    });
    else if(eligibleIds.has(record.registration))confirmed.add(record.registration);
    else excludedConfirmed++;
@@ -322,7 +322,7 @@ window.Edu = (() => {
   for(const r of records){const saved=byCGM.get(r.registration);if(!saved||!String(saved.name||'').trim()||/^\d+$/.test(saved.name)||(r.name&&normalize(saved.name)!==normalize(r.name)))throw Error('Conferência final do relatório falhou para CGM '+r.registration+'. Nenhum lote será aplicado.');}
   return records.length;
  }
- function recoverStudentNames(students,grades){
+ function recoverStudentNames(students,grades,confirmations=[]){
   const validName=name=>typeof name==='string'&&/[A-Za-zÀ-ÿ]/.test(name);
   const proofs=new Map(),claims=new Map();
   for(const student of students){
@@ -332,7 +332,7 @@ window.Edu = (() => {
    const registration=student.registration||proofs.get(student.id)?.registration;if(registration)claims.set(registration,(claims.get(registration)||0)+1);
   }
   const candidates=new Map();
-  for(const r of grades||[]){const name=String(r.name||'').trim();if(!r.registration||!validName(name))continue;if(!candidates.has(r.registration))candidates.set(r.registration,new Map());candidates.get(r.registration).set(normalize(name),name);}
+  for(const r of [...(grades||[]),...confirmations]){const name=String(r.name||'').trim();if(!r.registration||!validName(name))continue;if(!candidates.has(r.registration))candidates.set(r.registration,new Map());candidates.get(r.registration).set(normalize(name),name);}
   let recovered=0,unresolved=0;
   const result=students.map(student=>{
    const proof=proofs.get(student.id),registration=student.registration||(proof&&claims.get(proof.registration)===1?proof.registration:'');
@@ -847,7 +847,7 @@ window.Edu = (() => {
    ${chips.length?`<div class="filter-chips">${chips.map(([key,label])=>`<button class="secondary" data-action="remove-filter" data-value="${key}" aria-label="Remover filtro ${h(label)}">${h(label)} ×</button>`).join('')}<button class="secondary" data-action="clear-filters">Limpar filtros</button></div>`:''}</section>`;
  }
  function enrollmentStatus(s){if(!E.hasStudentIdentity(s))return 'Não avaliada · identidade não confirmada';const report=enrollmentForReferenceYear();return E.isFinalYear(s)?'Fora do cálculo · 3ª série EM':!report?'Sem relatório':report.records.some(r=>r.registration===s.registration)?'Confirmada':'Não localizada no relatório';}
- function enrollmentPanel(){const report=enrollmentForReferenceYear();if(!report)return '<section class="panel"><h2>Confirmação de matrícula</h2><p>Importe o relatório de matrículas confirmadas para acompanhar.</p></section>';const summary=E.enrollmentSummary(studentsForReferenceYear(),report);return `<section class="panel enrollment-panel"><h2>Confirmação de matrícula</h2><div class="enrollment-counts"><button class="secondary" data-action="enrollment-filter" data-value="confirmed"><strong>${summary.count}</strong><span>Confirmadas · ${pct(summary.percent)}</span></button><button class="secondary" data-action="enrollment-filter" data-value="pending"><strong>${summary.pending}</strong><span>Sem confirmação no relatório · ${pct(summary.total?100-summary.percent:null)}</span></button><p class="notes">Percentuais sobre ${summary.total} alunos considerados. ${summary.excluded} da 3ª série EM foram desconsiderados, confirmados ou não (base total: ${summary.baseTotal}).<br>Fonte: ${h(report.source)}<br>Atualizado: ${report.importedAt?h(new Date(report.importedAt).toLocaleString('pt-BR')):'carga inicial'}<br>${report.records.length} confirmações no arquivo; ${summary.unmatched.length} CGMs ausentes na base · ${summary.outsideRoster.length} cadastros fora da lista ativa · ${summary.excludedConfirmed} confirmações da 3ª série fora do indicador.</p></div><p class="notes">A ausência nesta lista indica confirmação ainda não localizada neste relatório, não uma recusa de matrícula. Turmas e outros filtros permitem localizar os estudantes na tabela abaixo.</p>${summary.unmatched.length?`<details><summary>Confirmações com CGM ausente na base (${summary.unmatched.length})</summary><ul>${sorted(summary.unmatched).map(r=>`<li>${h(r.name||'Nome não informado')} · CGM ${h(r.registration)}</li>`).join('')}</ul></details>`:''}${summary.outsideRoster.length?`<details><summary>Confirmações com cadastro fora da lista ativa (${summary.outsideRoster.length})</summary><ul>${sorted(summary.outsideRoster).map(r=>`<li>${studentName({...r,id:r.studentId})} · CGM ${h(r.registration)} · ${h(r.reason)}</li>`).join('')}</ul></details>`:''}</section>`;}
+ function enrollmentPanel(){const report=enrollmentForReferenceYear();if(!report)return '<section class="panel"><h2>Confirmação de matrícula</h2><p>Importe o relatório de matrículas confirmadas para acompanhar.</p></section>';const summary=E.enrollmentSummary(studentsForReferenceYear(),report);return `<section class="panel enrollment-panel"><h2>Confirmação de matrícula</h2><div class="enrollment-counts"><button class="secondary" data-action="enrollment-filter" data-value="confirmed"><strong>${summary.count}</strong><span>Confirmadas · ${pct(summary.percent)}</span></button><button class="secondary" data-action="enrollment-filter" data-value="pending"><strong>${summary.pending}</strong><span>Sem confirmação no relatório · ${pct(summary.total?100-summary.percent:null)}</span></button><p class="notes">Percentuais sobre ${summary.total} alunos considerados. ${summary.excluded} da 3ª série EM foram desconsiderados, confirmados ou não (base total: ${summary.baseTotal}).<br>Fonte: ${h(report.source)}<br>Atualizado: ${report.importedAt?h(new Date(report.importedAt).toLocaleString('pt-BR')):'carga inicial'}<br>${report.records.length} confirmações no arquivo; ${summary.unmatched.length} CGMs ausentes na base · ${summary.outsideRoster.length} cadastros fora da lista ativa · ${summary.excludedConfirmed} confirmações da 3ª série fora do indicador.</p></div><p class="notes">A ausência nesta lista indica confirmação ainda não localizada neste relatório, não uma recusa de matrícula. Turmas e outros filtros permitem localizar os estudantes na tabela abaixo.</p>${summary.unmatched.length?`<details><summary>Confirmações com CGM ausente na base (${summary.unmatched.length})</summary><ul>${sorted(summary.unmatched).map(r=>`<li>${h(r.name||'Nome não informado')} · CGM ${h(r.registration)}</li>`).join('')}</ul></details>`:''}${summary.outsideRoster.length?`<details><summary>Confirmações com cadastro fora da lista ativa (${summary.outsideRoster.length})</summary><ul>${sorted(summary.outsideRoster).map(r=>`<li>${studentName({...r,id:r.studentId},false)} · CGM ${h(r.registration)} · ${h(r.reason)}</li>`).join('')}</ul></details>`:''}</section>`;}
  function renderIssues(issues){
   const labels={registration:'Matrícula / CGM',name:'Nome',group:'Turma',series:'Série',birth:'Nascimento',status:'Situação',period:'Mês',classes:'Aulas dadas',absences:'Faltas',percentage:'Frequência no relatório (%)',calculated:'Frequência calculada (%)'};
   const flatten=record=>{const fields={};for(const [key,value] of Object.entries(record||{})){if(labels[key])fields[labels[key]]=value;if(key==='documents')for(const [doc,status] of Object.entries(value||{}))fields[E.DOCS[doc]||doc]=status;if(key==='raw')for(const [label,raw] of Object.entries(value||{}))fields[label]=raw;}return fields;};
@@ -961,7 +961,7 @@ window.Edu = (() => {
  }
  async function recoverNames(){
   if(storageError||cloudConflict)return;
-  const result=E.recoverStudentNames(db.students,db.grades);if(!result.recovered)return;
+  const result=E.recoverStudentNames(db.students,db.grades,enrollmentForReferenceYear()?.records||[]);if(!result.recovered)return;
   const next=clone(db);next.students=result.students;await save(next);render();notify(result.recovered+' cadastro(s) recuperado(s) por fontes confirmadas. '+result.unresolved+' cadastro(s) ainda precisam de nome conferido na fonte.');
  }
  function studentName(student,tag=true){
