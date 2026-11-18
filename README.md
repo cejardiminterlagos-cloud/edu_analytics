@@ -25,6 +25,8 @@ No painel do Supabase, em **Authentication → URL Configuration**, defina o Sit
 
 ## Relatórios Se Liga!
 
+Remover um relatório da lista de importações preserva os cadastros, notas, confirmações, pendências e históricos individuais. A ação não desfaz mais a importação. Ao carregar a base compartilhada ou abrir o modo local, nomes vazios ou compostos somente de dígitos são recuperados quando há um único nome normalizado nas notas para o mesmo CGM. A recuperação registra sua origem no histórico, preserva nomes existentes e não resolve correspondências ambíguas automaticamente. Cadastros sem fonte confiável exigem nova conferência no relatório de alunos.
+
 Abra **Se Liga!** e escolha o ano de referência. Importe CSV, XLSX ou XLS com uma linha por CGM e disciplina, confira a aba e associe as colunas antes de aplicar. O modelo CSV está disponível na própria tela. Campos: CGM, nome do estudante, turma, disciplina e notas do 1º, 2º e 3º trimestres. Nome e turma podem ser obtidos do cadastro pelo CGM; estudantes ausentes do cadastro precisam desses campos no arquivo.
 
 A média exige notas nos três trimestres. Zero é uma nota válida. Se faltar T1, T2 ou T3, a disciplina fica como Sem Nota (cinza). A classificação usa a média sem arredondamento: Recuperação (< 6, vermelho), Reforço (>= 6 e < 7, âmbar) e Aprofundamento (>= 7, azul). A tela e o PDF indicam quantos trimestres têm nota.

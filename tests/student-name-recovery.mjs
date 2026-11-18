@@ -1,0 +1,18 @@
+import './seliga.mjs';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+const E=window.Edu;
+const students=[{id:'a',registration:'1',name:'',history:[],sources:{}},{id:'b',registration:'2',name:'Nome manual',history:[],sources:{}},{id:'c',registration:'3',name:'3',history:[],sources:{}},{id:'d',registration:'4',name:'',history:[],sources:{}}];
+const grades=[{registration:'1',name:'Nome Fonte'},{registration:'1',name:'NOME FONTE'},{registration:'2',name:'Nome Diferente'},{registration:'3',name:'Nome A'},{registration:'3',name:'Nome B'},{registration:'4',name:'4'}];
+const before=structuredClone(students),result=E.recoverStudentNames(students,grades);
+assert.equal(result.recovered,1);assert.equal(result.unresolved,2);assert.equal(result.students[0].name,'NOME FONTE');assert.equal(result.students[0].history[0].changes[0].beforeValue,'');
+assert.equal(result.students[1].name,'Nome manual');assert.equal(result.students[2].name,'3');assert.equal(result.students[3].name,'');assert.deepEqual(students,before);
+assert.equal(E.recoverStudentNames(result.students,grades).recovered,0);
+const html=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
+const source=html.slice(html.indexOf(' async function deleteImportedReport(id)'),html.indexOf(' function renderImport(){'));
+const state={students:result.students,grades,imports:[{id:'old',file:'antigo.csv'},{id:'new',file:'novo.csv'}],enrollment:{id:'old'},pendingImports:[{id:'old'}]};
+const env={db:state,clone:structuredClone,confirm:()=>true,save:async next=>{env.db=next;},render:()=>{},notify:()=>{}};
+await vm.runInNewContext(source+'\ndeleteImportedReport("old")',env);
+assert.deepEqual(env.db.students,state.students);assert.deepEqual(env.db.grades,state.grades);assert.deepEqual(env.db.enrollment,state.enrollment);assert.deepEqual(env.db.pendingImports,state.pendingImports);assert.deepEqual(env.db.imports,[state.imports[1]]);
+console.log('PASS: unique CGM recovery, existing names preserved, ambiguous/missing sources skipped, idempotence and report removal without reversing student data.');
