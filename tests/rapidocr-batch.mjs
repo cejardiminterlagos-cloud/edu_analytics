@@ -1,0 +1,18 @@
+import './seliga.mjs';
+import assert from 'node:assert/strict';
+const E=window.Edu;
+const batch=(notes,registration='123',name='Ana')=>({subjects:['Arte'],imageRows:[[registration,name,...notes]]});
+assert.equal(typeof E.combineImageGrades,'function');
+assert.throws(()=>E.combineImageGrades([null]),/inválida/);
+let result=E.combineImageGrades([batch(['0,0','?','·']),batch(['0,0','7,3',''])]);
+assert.deepEqual(result.imageRows,[['123','Ana','0,0','7,3','']]);
+result=E.combineImageGrades([batch(['6,0','·','·']),batch(['7,0','·','·']),batch(['6,0','·','·'])]);
+assert.equal(result.imageRows[0][2],'?');
+assert.equal(result.conflicts,1);
+assert.equal(E.combineImageGrades([batch(['?','','·']),batch(['','?','·'])]).imageRows[0][2],'?');
+assert.equal(E.combineImageGrades([batch(['?','','·']),batch(['','?','·'])]).imageRows[0][3],'?');
+assert.equal(E.combineImageGrades([batch(['1,0','',''],''),batch(['2,0','',''],'')]).imageRows.length,2);
+assert.equal(E.combineImageGrades([batch(['1,0','','']),batch(['1,0','',''],'123','Outra pessoa')]).imageRows[0][1],'?');
+assert.throws(()=>E.combineImageGrades([{subjects:['Arte'],imageRows:[['123','Ana','73','','']]}]),/nota|Nota/i);
+assert.throws(()=>E.combineImageGrades([{subjects:['Arte'],imageRows:[['123','Ana','7,0']]}]),/célula/i);
+console.log('PASS: RapidOCR overlaps, zero, unknown identities, persistent conflicts and invalid responses.');

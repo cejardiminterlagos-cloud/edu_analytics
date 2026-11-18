@@ -11,13 +11,17 @@ const fs=require('fs'),path=require('path'),assert=require('assert/strict');
  try{
   const page=await browser.newPage();
   await page.route('https://**',r=>r.abort());
+  let requests=0;
+  const subjects=['Arte','Ciências','Educação Física','Geografia','História','Leitura Rec Aprend','Língua Inglesa','Língua Portuguesa','Matemática','Rec Aprend'];
+  await page.route('http://127.0.0.1:8766/recognize',async route=>{
+   requests++;
+   assert.equal(route.request().headers()['x-eduanalytics-ocr'],'1');
+   assert.equal(route.request().headers()['content-type'],'application/octet-stream');
+   const notes=Array(30).fill('?');notes[0]=requests===1?'8,0':'9,0';notes[1]='0,0';
+   await route.fulfill({json:{engine:'RapidOCR',version:1,subjects,imageRows:[['1234567890','ANA SOUZA',...notes]]}});
+  });
   await page.addInitScript(seed=>{
    localStorage.setItem('eduanalytics_db_v1',JSON.stringify(seed));
-   const word=(x,text)=>['5',1,1,1,1,1,x,9,12,24,98,text].join('\t');
-   window.Tesseract={createWorker:async()=>({
-    setParameters:async()=>{},terminate:async()=>{},
-    recognize:async canvas=>({data:{tsv:canvas.width===624?word(18,'ANA SOUZA - 1234567890 |'):word(30,'8,0')+'\n'+word(130,'0,0')}})
-   })};
   },seed);
   await page.goto(pathToFileURL(app).href+'#seliga');
   if(await page.locator('#cloud-gate').isVisible())await page.locator('[data-action=cloud-local-only]').click();
@@ -26,16 +30,19 @@ const fs=require('fs'),path=require('path'),assert=require('assert/strict');
    const canvas=document.createElement('canvas');canvas.width=1192;canvas.height=588;
    return canvas.toDataURL().split(',')[1];
   });
-  await page.locator('#grades-file').setInputFiles({name:'captura.png',mimeType:'image/png',buffer:Buffer.from(png,'base64')});
+  await page.locator('#grades-file').setInputFiles(['a','b'].map(name=>({name:name+'.png',mimeType:'image/png',buffer:Buffer.from(png,'base64')})));
   await page.locator('#grades-upload button[type=submit]').click();
   const field=page.locator('#grade-image-data');
   await field.waitFor();
   const values=(await field.inputValue()).split('\t');
-  assert.deepEqual(values.slice(0,5),['1234567890','ANA SOUZA','8,0','0,0','?']);
+  assert.equal(requests,2);
+  assert.deepEqual(values.slice(0,5),['1234567890','ANA SOUZA','?','0,0','?']);
+  assert.equal(await page.locator('#grades-mapping').getByText(/1 conflitos entre capturas/).count(),1);
   const review=page.locator('#grades-image-review');
   await review.getByRole('checkbox').check();
   await review.getByRole('button').click();
   assert.equal(await page.locator('[data-action=grades-apply]').count(),0);
+  values[2]='8,0';
   await field.fill(values.map(v=>v==='?'?'':v).join('\t'));
   await review.getByRole('button').click();
   await page.locator('[data-action=grades-apply]').click();
@@ -46,6 +53,15 @@ const fs=require('fs'),path=require('path'),assert=require('assert/strict');
   await page.locator('#grades-group').selectOption('6º Ano A');
   const art=page.getByRole('row').filter({has:page.getByRole('rowheader',{name:'Arte',exact:true})});
   assert.deepEqual(await art.getByRole('cell').allTextContents(),['1','0','0','0']);
-  console.log('PASS: image review, uncertain cells blocked, overwrite, protected grades and class diagnosis.');
+  // A failed image must not leave a partial lot ready to apply.
+  await page.route('http://127.0.0.1:8766/recognize',route=>route.fulfill({status:422,json:{error:'Cabeçalhos não reconhecidos.'}}));
+  await page.locator('details.panel summary').click();
+  await page.locator('#grades-file').setInputFiles({name:'bad.png',mimeType:'image/png',buffer:Buffer.from(png,'base64')});
+  await page.locator('#grades-upload button[type=submit]').click();
+  await page.getByText('Cabeçalhos não reconhecidos.',{exact:true}).waitFor();
+  assert.equal(await page.locator('[data-action=grades-apply]').count(),0);
+  assert.equal(await page.locator('#grade-image-data').count(),0);
+  assert.equal(await page.evaluate(()=>EduApp.getState().grades.length),10);
+  console.log('PASS: RapidOCR batch HTTP, overlaps, conflicts, failed lots, protected grades and diagnosis.');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
