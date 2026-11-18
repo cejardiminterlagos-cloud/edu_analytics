@@ -313,7 +313,7 @@ window.Edu = (() => {
     }catch(err){conflict(err.message);return;}
    }
    Object.entries(r.documents||{}).forEach(([k,v])=>{if(v!=null&&v!==''&&DOCS[k]){const field='document:'+k;if(candidate.documents[k]!==v||(entryId&&!compact))changes.push({field,before:candidate.documents[k]??null,after:v,beforeValue:candidate.documents[k]??null,afterValue:v,beforeSource:candidate.sources[field]??null,afterSource:entrySource});candidate.documents[k]=v;}});
-   if(changes.length||(allowNew&&entryId&&r.registration&&r.name)){candidate.history.push({date:new Date().toISOString(),source:entrySource,importId:entryId||null,changes,...(allowNew?{confirmedIdentity:{registration:r.registration,name:r.name}}:{}),...(compact&&r._line?{line:r._line}:{}),...(compact&&r._page?{page:r._page}:{})});candidate.updated=new Date().toISOString();for(const ch of changes)candidate.sources[ch.field]=entrySource;}
+   if(changes.length||(allowNew&&entryId&&r.registration&&r.name)){candidate.history.push({date:new Date().toISOString(),source:entrySource,importId:entryId||null,changes,...(allowNew?{confirmedIdentity:{registration:r.registration,name:r.name},confirmedFields:Object.fromEntries(['birth','phone'].filter(field=>r[field]!=null&&String(r[field]).trim()&&String(r[field]).trim()===candidate[field]).map(field=>[field,candidate[field]]))}:{}),...(compact&&r._line?{line:r._line}:{}),...(compact&&r._page?{page:r._page}:{})});candidate.updated=new Date().toISOString();for(const ch of changes)candidate.sources[ch.field]=entrySource;}
    if(target){students[students.indexOf(target)]=candidate;updated++;}else{students.push(candidate);added++;}
   });return {students,added,updated,conflicts};
  }
@@ -346,6 +346,30 @@ window.Edu = (() => {
    recovered++;
    return {...student,registration,name,sources:{...student.sources,...Object.fromEntries(changes.map(c=>[c.field,source]))},history:[...(student.history||[]),{date:new Date().toISOString(),source,confirmedIdentity:{registration,name},changes}]};
   });return {students:result,recovered,unresolved};
+ }
+ function recoverStudentProfile(students){
+  let recovered=0,fieldsRecovered=0;
+  const result=students.map(student=>{
+   if(!student.registration)return student;
+   const values={};
+   for(const field of ['birth','phone']){
+    if(String(student[field]??'').trim())continue;
+    for(const event of [...(student.history||[])].reverse()){
+     const explicit=[...(event.changes||[])].reverse().find(c=>c.field===field&&Object.hasOwn(c,'afterValue'));
+     if(explicit&&!(String(explicit.afterValue??'').trim()))break;
+     if(event.confirmedIdentity&&event.confirmedIdentity.registration!==student.registration)continue;
+     const raw=explicit?explicit.afterValue:event.confirmedIdentity?.registration===student.registration?event.confirmedFields?.[field]:null;
+     if(raw==null)continue;
+     const value=String(raw).trim();
+     try{if(field==='birth'){if(dateISO(value)>today())break;values[field]=dateISO(value);}else if(value.length<=200&&/^[\d\s()+./-]+$/.test(value)&&value.replace(/\D/g,'').length>=7)values[field]=value;}catch{}
+     break;
+    }
+   }
+   const changes=Object.entries(values).map(([field,value])=>({field,before:student[field]??null,after:value,beforeValue:student[field]??null,afterValue:value,beforeSource:student.sources?.[field]??null,afterSource:'Recuperacao por dados cadastrais confirmados'}));
+   if(!changes.length)return student;
+   recovered++;fieldsRecovered+=changes.length;
+   return {...student,...values,sources:{...student.sources,...Object.fromEntries(changes.map(c=>[c.field,c.afterSource]))},history:[...(student.history||[]),{date:new Date().toISOString(),source:'Recuperacao por dados cadastrais confirmados',confirmedIdentity:{registration:student.registration,name:student.name},confirmedFields:values,changes}]};
+  });return {students:result,recovered,fieldsRecovered};
  }
  function validateEvents(events,year){if(!Number.isInteger(year)||year<2000||year>2100)throw Error('Ano deve estar entre 2000 e 2100.');return events.map(e=>{let start=dateISO(e.start),end=dateISO(e.end||e.start);if(!start||!end||start>end||Number(start.slice(0,4))!==year||Number(end.slice(0,4))!==year)throw Error('Períodos devem estar em ordem e dentro do ano selecionado.');if(!['feriado','recesso','ferias','planejamento'].includes(e.kind))throw Error('Tipo de período inválido.');return {start,end,kind:e.kind,label:String(e.label||'').slice(0,200)};});}
  function deadline(start,calendars){let iso=dateISO(start);if(!iso)throw Error('Informe a data da cobrança.');let d=new Date(iso+'T12:00:00Z'),count=0,missing=new Set();for(let i=0;i<3700;i++){d.setUTCDate(d.getUTCDate()+1);const day=d.toISOString().slice(0,10),year=d.getUTCFullYear(),cal=calendars[year];if(!cal?.reviewed)missing.add(year);const blocked=(cal?.events||[]).some(e=>['feriado','recesso'].includes(e.kind)&&e.start<=day&&e.end>=day);if(d.getUTCDay()!==0&&d.getUTCDay()!==6&&!blocked)count++;if(count===15)return {date:missing.size?null:day,estimate:day,missing:[...missing]};}throw Error('Calendário bloqueia um período excessivo.');}
@@ -602,7 +626,7 @@ window.Edu = (() => {
   return {p_grades:after.filter(r=>JSON.stringify(payload(old.get(gradeKey(r))||{notes:[]}))!==JSON.stringify(payload(r))).map(payload),p_removed_grades:before.filter(r=>!current.has(gradeKey(r))).map(r=>({year:r.year,registration:r.registration,disciplineKey:normalize(r.discipline)}))};
  }
 
- return {hasStudentIdentity,verifyRosterCoverage,recoverStudentNames,confirmedAbsence,overallGrade,consolidatedGrades,consolidatedGradeRemovals,imageGradeStudents,imageGradeRows,imageGradeSubjects,imageGradeEdges,gradeDistribution,consolidateGradeCalls,gradeDelta,parseGradePDF,suggestGradeLink,GRADE_LEVELS,gradeNumber,importGradeNumber,gradeSummary,gradeKey,validateGrades,mergeGrades,parseGrades,DOCS,IDEAL,LABELS,SPECIAL_COURSES,matchSpecialCourses,activeRosterStatus,isActiveRosterStudent,rosterPriority,normalize,esc,uid,today,dateISO,parseCSV,toCSV,series,number,docStatus,pending,metrics,isFinalYear,enrollmentSummary,month,migrateFrequency,monthlySummary,mergeStudentDatasets,validateEvents,deadline};
+ return {recoverStudentProfile,hasStudentIdentity,verifyRosterCoverage,recoverStudentNames,confirmedAbsence,overallGrade,consolidatedGrades,consolidatedGradeRemovals,imageGradeStudents,imageGradeRows,imageGradeSubjects,imageGradeEdges,gradeDistribution,consolidateGradeCalls,gradeDelta,parseGradePDF,suggestGradeLink,GRADE_LEVELS,gradeNumber,importGradeNumber,gradeSummary,gradeKey,validateGrades,mergeGrades,parseGrades,DOCS,IDEAL,LABELS,SPECIAL_COURSES,matchSpecialCourses,activeRosterStatus,isActiveRosterStudent,rosterPriority,normalize,esc,uid,today,dateISO,parseCSV,toCSV,series,number,docStatus,pending,metrics,isFinalYear,enrollmentSummary,month,migrateFrequency,monthlySummary,mergeStudentDatasets,validateEvents,deadline};
 })();
 </script>
 <script id="application">'use strict';
@@ -966,8 +990,8 @@ window.Edu = (() => {
  }
  async function recoverNames(){
   if(storageError||cloudConflict)return;
-  const result=E.recoverStudentNames(db.students,db.grades,enrollmentForReferenceYear()?.records||[]);if(!result.recovered)return;
-  const next=clone(db);next.students=result.students;await save(next);render();notify(result.recovered+' cadastro(s) recuperado(s) por fontes confirmadas. '+result.unresolved+' cadastro(s) ainda precisam de nome conferido na fonte.');
+  const result=E.recoverStudentNames(db.students,db.grades,enrollmentForReferenceYear()?.records||[]),profile=E.recoverStudentProfile(result.students);if(!result.recovered&&!profile.recovered)return;
+  const next=clone(db);next.students=profile.students;await save(next);render();notify(result.recovered+' identidade(s) e '+profile.fieldsRecovered+' dado(s) cadastral(is) recuperado(s) por fontes confirmadas. '+result.unresolved+' cadastro(s) ainda precisam de nome conferido na fonte.');
  }
  function studentName(student,tag=true){
   const known=student.id?byId(student.id):db.students.find(s=>s.registration===student.registration);

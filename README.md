@@ -33,6 +33,8 @@ Cadastros sem nome válido ou sem CGM são preservados, mas ficam fora das lista
 
 A recuperação de nomes consulta também o relatório de confirmação de matrícula do ano selecionado, por CGM exato, preservando nomes existentes e recusando fontes divergentes. O painel de matrícula explica quando um cadastro está sem identidade, em vez de apresentar apenas “Matriculado” como motivo da exclusão. As listas de confirmações mantêm os nomes clicáveis e não incluem etiquetas pedagógicas de notas.
 
+Importações cadastrais registram também os valores de telefone e nascimento efetivamente aceitos em `confirmedFields`, vinculados ao CGM confirmado no evento. A recuperação local pode preencher campos ausentes por esses eventos e pelo último valor explícito do histórico; preserva campos preenchidos e não desfaz uma exclusão explícita posterior. A idade continua sendo calculada a partir do nascimento, sem criar um campo independente. Nascimentos inválidos/futuros e telefones sem formato reconhecível não são recuperados automaticamente.
+
 Abra **Se Liga!** e escolha o ano de referência. Importe CSV, XLSX ou XLS com uma linha por CGM e disciplina, confira a aba e associe as colunas antes de aplicar. O modelo CSV está disponível na própria tela. Campos: CGM, nome do estudante, turma, disciplina e notas do 1º, 2º e 3º trimestres. Nome e turma podem ser obtidos do cadastro pelo CGM; estudantes ausentes do cadastro precisam desses campos no arquivo.
 
 A média exige notas nos três trimestres. Zero é uma nota válida. Se faltar T1, T2 ou T3, a disciplina fica como Sem Nota (cinza). A classificação usa a média sem arredondamento: Recuperação (< 6, vermelho), Reforço (>= 6 e < 7, âmbar) e Aprofundamento (>= 7, azul). A tela e o PDF indicam quantos trimestres têm nota.
