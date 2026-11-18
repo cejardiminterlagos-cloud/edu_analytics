@@ -6,6 +6,8 @@ Os arquivos originais são lidos no navegador. O histórico guarda a identifica�
 
 ## Nuvem
 
+A migração `supabase/bulk-sync.sql` prepara as listas de estudantes uma vez por atualização para evitar leituras repetidas dos históricos em lotes grandes. Mantém a revisão esperada, a ordem dos cadastros e as permissões existentes. O teste `tests/bulk-sync.sql` usa somente tabela e função temporárias; valida inclusão, atualização, remoção, campos preservados, revisão antiga e 3.000 cadastros fictícios com aproximadamente 10 MB de histórico (limite de 10 segundos no banco).
+
 - Projeto Supabase: `djrumtxagxkmluuxbrfd`.
 - Esquema idempotente e políticas RLS: [`supabase/schema.sql`](supabase/schema.sql).
 - O estado cadastral continua em JSON; notas e vínculos por ano ficam nas tabelas `edu_grades` e `edu_grade_enrollments`, definidas em `supabase/grades.sql`. A função `edu_analytics_patch_v2` grava alterações cadastrais e somente as notas alteradas em uma transação, exigindo a revisão atual. As políticas permitem leitura e gravação somente para `cejardiminterlagos@nrecascavel.com`.
