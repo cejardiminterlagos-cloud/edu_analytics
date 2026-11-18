@@ -362,6 +362,7 @@ window.Edu = (() => {
   if(!Number.isFinite(n)||n<0||n>10)throw Error('Nota fora da faixa de 0 a 10.');
   return n;
  }
+ const importGradeNumber=value=>/^\s*[-\u2013\u2014]+\s*$/.test(String(value??''))?null:gradeNumber(value);
  function gradeSummary(notes){
   if(!Array.isArray(notes)||notes.length!==3)throw Error('Informe os três trimestres.');
   const values=notes.map(gradeNumber).filter(n=>n!==null),count=values.length;
@@ -465,9 +466,9 @@ window.Edu = (() => {
   if(!blocks.length)throw Error('Nenhuma disciplina encontrada no consolidado.');
   const data=rows.slice(start+2).filter(r=>r.some(v=>String(v??'').trim()));
   if(!data.length)throw Error('Consolidado sem estudantes.');
-  for(const row of data){
+  for(const [index,row] of data.entries()){
    if(row.length!==header.length||!/^\d{1,40}$/.test(String(row[1]||'').trim())||!needsRosterNames&&!String(row[2]||'').trim())throw Error('Linha inválida no consolidado: confira CGM, nome e quantidade de colunas.');
-   for(const {col} of blocks)for(let t=0;t<3;t++)gradeNumber(/^\s*[—–-]?\s*$/.test(String(row[col+t]??''))?null:row[col+t]);
+   for(const {col,name} of blocks)for(let t=0;t<3;t++){try{importGradeNumber(row[col+t]);}catch(err){throw Error('Linha '+(start+3+index)+' / CGM '+row[1]+' / '+name+' / T'+(t+1)+' / valor '+String(row[col+t]).slice(0,30)+': '+err.message);}}
   }
   return {blocks,data,...(needsRosterNames?{needsRosterNames:true}:{})};
  }
@@ -482,7 +483,7 @@ window.Edu = (() => {
    try{
     const read=k=>map[k]==null?'':String(row[map[k]]??'').trim();
     const registration=read('registration'),student=roster.get(registration);
-    const r={year,registration,name:read('name')||student?.name||'',group:read('group')||student?.group||'',discipline:read('discipline'),notes:['t1','t2','t3'].map(k=>gradeNumber(map[k]==null?null:row[map[k]]))};
+    const r={year,registration,name:read('name')||student?.name||'',group:read('group')||student?.group||'',discipline:read('discipline'),notes:['t1','t2','t3'].map(k=>importGradeNumber(map[k]==null?null:row[map[k]]))};
     validateGrades([r]);records.push(r);
    }catch(err){issues.push('Linha '+(i+2)+': '+err.message);}
   });
@@ -601,7 +602,7 @@ window.Edu = (() => {
   return {p_grades:after.filter(r=>JSON.stringify(payload(old.get(gradeKey(r))||{notes:[]}))!==JSON.stringify(payload(r))).map(payload),p_removed_grades:before.filter(r=>!current.has(gradeKey(r))).map(r=>({year:r.year,registration:r.registration,disciplineKey:normalize(r.discipline)}))};
  }
 
- return {hasStudentIdentity,verifyRosterCoverage,recoverStudentNames,confirmedAbsence,overallGrade,consolidatedGrades,consolidatedGradeRemovals,imageGradeStudents,imageGradeRows,imageGradeSubjects,imageGradeEdges,gradeDistribution,consolidateGradeCalls,gradeDelta,parseGradePDF,suggestGradeLink,GRADE_LEVELS,gradeNumber,gradeSummary,gradeKey,validateGrades,mergeGrades,parseGrades,DOCS,IDEAL,LABELS,SPECIAL_COURSES,matchSpecialCourses,activeRosterStatus,isActiveRosterStudent,rosterPriority,normalize,esc,uid,today,dateISO,parseCSV,toCSV,series,number,docStatus,pending,metrics,isFinalYear,enrollmentSummary,month,migrateFrequency,monthlySummary,mergeStudentDatasets,validateEvents,deadline};
+ return {hasStudentIdentity,verifyRosterCoverage,recoverStudentNames,confirmedAbsence,overallGrade,consolidatedGrades,consolidatedGradeRemovals,imageGradeStudents,imageGradeRows,imageGradeSubjects,imageGradeEdges,gradeDistribution,consolidateGradeCalls,gradeDelta,parseGradePDF,suggestGradeLink,GRADE_LEVELS,gradeNumber,importGradeNumber,gradeSummary,gradeKey,validateGrades,mergeGrades,parseGrades,DOCS,IDEAL,LABELS,SPECIAL_COURSES,matchSpecialCourses,activeRosterStatus,isActiveRosterStudent,rosterPriority,normalize,esc,uid,today,dateISO,parseCSV,toCSV,series,number,docStatus,pending,metrics,isFinalYear,enrollmentSummary,month,migrateFrequency,monthlySummary,mergeStudentDatasets,validateEvents,deadline};
 })();
 </script>
 <script id="application">'use strict';
@@ -1193,7 +1194,7 @@ window.Edu = (() => {
   const linked=data.filter(row=>resolved.get(String(row[1]).trim()));
   const pending=resolved.size-new Set(linked.map(row=>String(row[1]).trim())).size;
   if(!linked.length)throw Error('Nenhum estudante tem turma confirmada neste ano. Corrija os vínculos no cadastro e reimporte o CSV.');
-  for(const row of linked)blocks.forEach(({col},i)=>incoming.push({year:gradeImport.year,registration:String(row[1]).trim(),name:String(row[2]||db.students.find(s=>s.registration===String(row[1]).trim())?.name||'').trim(),group:resolved.get(String(row[1]).trim()),discipline:$(`[data-consolidated-subject="${i}"]`).value.trim(),notes:[0,1,2].map(t=>E.gradeNumber(/^\s*[—–-]?\s*$/.test(String(row[col+t]??''))?null:row[col+t])),source:gradeImport.file,importedAt:now}));
+  for(const row of linked)blocks.forEach(({col},i)=>incoming.push({year:gradeImport.year,registration:String(row[1]).trim(),name:String(row[2]||db.students.find(s=>s.registration===String(row[1]).trim())?.name||'').trim(),group:resolved.get(String(row[1]).trim()),discipline:$(`[data-consolidated-subject="${i}"]`).value.trim(),notes:[0,1,2].map(t=>E.importGradeNumber(row[col+t])),source:gradeImport.file,importedAt:now}));
   E.validateGrades(incoming);
   const old=new Map((db.grades||[]).map(r=>[E.gradeKey(r),r]));
   const cleared=incoming.flatMap(r=>r.notes.flatMap((n,i)=>{const prev=old.get(E.gradeKey(r));return n===null&&prev?.notes[i]!=null&&!prev.manual?.[i]?[`${r.name} · ${r.discipline} · T${i+1}: ${gradeFormat(prev.notes[i])} → Sem Nota`]:[];}));

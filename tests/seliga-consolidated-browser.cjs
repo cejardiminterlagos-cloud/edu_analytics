@@ -51,7 +51,7 @@ try{
  for(const source of data)for(const [index,block] of blocks.entries()){
   const record=updated.find(r=>r.registration===String(source[1]).trim()&&r.discipline===curricula[0].disciplines[index]);
   assert.ok(record);assert.equal(record.name,String(source[2]||roster.find(s=>s.registration===record.registration).name).trim());
-  const expectedNotes=source.slice(block.col,block.col+3).map(value=>/^\s*[—–-]?\s*$/.test(String(value??''))?null:Number(String(value).trim().replace(',','.')));
+  const expectedNotes=source.slice(block.col,block.col+3).map(value=>/^\s*[-\u2013\u2014]*\s*$/.test(String(value??''))?null:Number(String(value).trim().replace(',','.')));
   assert.deepEqual(record.notes,Array.from(expectedNotes));
  }
  console.log('PASS: real CSV, unresolved CGM skipped, cleanup blocked until roster confirmed, reimport and cleanup.');

@@ -22,6 +22,17 @@ assert.deepEqual(parsed.data[0].slice(3,6),['0,0','','7,0']);assert.deepEqual(un
 for(const value of ['Nome do aluno','1','']){const bad=structuredClone(unnamed);bad[2][1]=value;assert.throws(()=>E.consolidatedGrades(bad),/CGM/);}
 const bad=structuredClone(rows);bad[3][3]='11';assert.throws(()=>E.consolidatedGrades(bad));
 const short=structuredClone(rows);short[3].pop();assert.throws(()=>E.consolidatedGrades(short));
+for(const missing of ['-','--','---','\u2013','\u2014',' \u2014\u2014 ']){
+ const variant=structuredClone(rows);variant[3][3]=missing;
+ assert.equal(E.consolidatedGrades(variant).data.length,1);
+ assert.equal(E.importGradeNumber(missing),null);
+}
+for(const invalid of ['?','6-3','N/A','11','-1']){
+ const variant=structuredClone(rows);variant[3][3]=invalid;
+ assert.throws(()=>E.consolidatedGrades(variant),/Linha 4.*CGM 123.*ARTE.*T1/);
+}
+assert.equal(E.importGradeNumber('0'),0);
+assert.throws(()=>E.gradeNumber('--'));
 const a={year:2026,registration:'123',name:'Ana',group:'8 A',discipline:'Arte',notes:[9,8,7],manual:[true,false,false]};
 assert.deepEqual(E.mergeGrades([a],[{...a,notes:[0,null,6]}],true).records[0].notes,[9,null,6]);
 assert.deepEqual(E.mergeGrades([a],[{...a,notes:[0,null,6]}]).records[0].notes,[9,8,6]);
