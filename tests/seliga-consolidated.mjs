@@ -15,6 +15,11 @@ for(const header of ['NOME DO ESTUDANTE','ESTUDANTE','NOME DO ALUNO']){
  const invalid=structuredClone(swapped);invalid[3][2]='CGM inválido';assert.throws(()=>E.consolidatedGrades(invalid),/CGM/);
 }
 assert.equal(E.consolidatedGrades([['CGM','Disciplina']]),null);
+const unnamed=[['nº','ESTUDANTE','ARTE','','','','',''],['','','T1','T2','T3','Média','F','Grupo'],['1','1234567890','0,0','','7,0','','','']];
+const unchanged=structuredClone(unnamed),parsed=E.consolidatedGrades(unnamed);
+assert.equal(parsed.needsRosterNames,true);assert.equal(parsed.data[0][1],'1234567890');assert.equal(parsed.data[0][2],'');assert.equal(parsed.blocks[0].col,3);
+assert.deepEqual(parsed.data[0].slice(3,6),['0,0','','7,0']);assert.deepEqual(unnamed,unchanged);
+for(const value of ['Nome do aluno','1','']){const bad=structuredClone(unnamed);bad[2][1]=value;assert.throws(()=>E.consolidatedGrades(bad),/CGM/);}
 const bad=structuredClone(rows);bad[3][3]='11';assert.throws(()=>E.consolidatedGrades(bad));
 const short=structuredClone(rows);short[3].pop();assert.throws(()=>E.consolidatedGrades(short));
 const a={year:2026,registration:'123',name:'Ana',group:'8 A',discipline:'Arte',notes:[9,8,7],manual:[true,false,false]};

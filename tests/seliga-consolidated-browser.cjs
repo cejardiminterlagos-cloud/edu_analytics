@@ -9,7 +9,7 @@ const vm=require('node:vm'),context={window:{}};
 vm.runInNewContext(html.match(/<script id="engine">([\s\S]*?)<\/script>/)[1],context);
 const file=process.argv[2]||'C:/Users/Bruno/Downloads/8ºA.xlsx - Consolidado notas.csv';
 const {data,blocks}=context.window.Edu.consolidatedGrades(context.window.Edu.parseCSV(fs.readFileSync(file,'utf8')));
-const roster=data.map(([,registration,name])=>({id:registration,registration,name,group:'8º Ano A',status:'MATRICULADO',series:'8EF',rosterYear:String(seed.referenceYear),documents:{},history:[],sources:{},rosterStudent:true}));
+const roster=data.map(([,registration,name])=>({id:registration,registration,name:name||'Nome Teste '+registration,group:'8º Ano A',status:'MATRICULADO',series:'8EF',rosterYear:String(seed.referenceYear),documents:{},history:[],sources:{},rosterStudent:true}));
 const pending=roster.at(-1),[known]=roster;
 seed.students=roster.slice(0,-1);
 seed.grades=[{year:seed.referenceYear,registration:known.registration,name:known.name,group:known.group,discipline:'Disciplina antiga',notes:[9,9,9]}];
@@ -50,7 +50,7 @@ try{
  assert.ok(updated.every(row=>row.discipline!=='Disciplina antiga'));
  for(const source of data)for(const [index,block] of blocks.entries()){
   const record=updated.find(r=>r.registration===String(source[1]).trim()&&r.discipline===curricula[0].disciplines[index]);
-  assert.ok(record);assert.equal(record.name,String(source[2]).trim());
+  assert.ok(record);assert.equal(record.name,String(source[2]||roster.find(s=>s.registration===record.registration).name).trim());
   const expectedNotes=source.slice(block.col,block.col+3).map(value=>/^\s*[—–-]?\s*$/.test(String(value??''))?null:Number(String(value).trim().replace(',','.')));
   assert.deepEqual(record.notes,Array.from(expectedNotes));
  }

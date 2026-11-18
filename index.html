@@ -448,8 +448,12 @@ window.Edu = (() => {
  }
  function consolidatedGrades(rows){
   const studentHeaders=['NOME DO ESTUDANTE','ESTUDANTE','NOME DO ALUNO'];
-  const start=rows.findIndex(r=>normalize(r[1])==='CGM'&&studentHeaders.includes(normalize(r[2]))||normalize(r[2])==='CGM'&&studentHeaders.includes(normalize(r[1])));
-  if(start<0)return null;
+  let start=rows.findIndex(r=>normalize(r[1])==='CGM'&&studentHeaders.includes(normalize(r[2]))||normalize(r[2])==='CGM'&&studentHeaders.includes(normalize(r[1])));
+  let needsRosterNames=false;
+  if(start<0){start=rows.findIndex((r,i)=>['CGM','ESTUDANTE'].includes(normalize(r[1]))&&String(rows[i+1]?.[2]||'').trim()==='T1');if(start<0)return null;needsRosterNames=true;
+   if(rows.slice(start+2).some(r=>r.some(v=>String(v??'').trim())&&!/^\d{5,15}$/.test(String(r[1]||'').trim())))throw Error('O consolidado sem nomes exige CGMs num?ricos na coluna ESTUDANTE ou CGM.');
+   rows=rows.map(r=>[r[0],r[1],'',...r.slice(2)]);
+  }
   // Keep the importer's CGM/name positions stable without changing the source sheet.
   if(normalize(rows[start][2])==='CGM')rows=rows.map(r=>[r[0],r[2],r[1],...r.slice(3)]);
   const blocks=[],header=rows[start],terms=rows[start+1]||[];
@@ -462,10 +466,10 @@ window.Edu = (() => {
   const data=rows.slice(start+2).filter(r=>r.some(v=>String(v??'').trim()));
   if(!data.length)throw Error('Consolidado sem estudantes.');
   for(const row of data){
-   if(row.length!==header.length||!/^\d{1,40}$/.test(String(row[1]||'').trim())||!String(row[2]||'').trim())throw Error('Linha inválida no consolidado: confira CGM, nome e quantidade de colunas.');
+   if(row.length!==header.length||!/^\d{1,40}$/.test(String(row[1]||'').trim())||!needsRosterNames&&!String(row[2]||'').trim())throw Error('Linha inválida no consolidado: confira CGM, nome e quantidade de colunas.');
    for(const {col} of blocks)for(let t=0;t<3;t++)gradeNumber(/^\s*[—–-]?\s*$/.test(String(row[col+t]??''))?null:row[col+t]);
   }
-  return {blocks,data};
+  return {blocks,data,...(needsRosterNames?{needsRosterNames:true}:{})};
  }
  function parseGrades(rows,map,year,students=[]){
   if(!Number.isInteger(year)||year<2000||year>2100)throw Error('Ano letivo inválido.');
@@ -1162,7 +1166,7 @@ window.Edu = (() => {
   for(const row of data){
    const registration=String(row[1]).trim(),matches=roster.filter(s=>s.registration===registration);
    const known=[...new Set(matches.filter(s=>s.group).map(group))];
-   groups.set(registration,known.length===1&&matches.every(s=>s.group)?known[0]:null);
+   groups.set(registration,known.length===1&&matches.every(s=>s.group&&(String(row[2]||'').trim()||E.hasStudentIdentity(s)))?known[0]:null);
   }
   return groups;
  }
@@ -1174,7 +1178,7 @@ window.Edu = (() => {
    const pending=[...new Map(consolidated.data.filter(r=>!resolved.get(String(r[1]).trim())).map(r=>[String(r[1]).trim(),r])).values()];
    const aliases={'ED. FÍSICA':'Educação Física','ED. DIGITAL':'Educação Digital'};
    const subjects=[...new Set((db.grades||[]).filter(r=>r.year===gradeImport.year).map(r=>r.discipline))];
-   $('#grades-mapping').innerHTML=`<h2>Consolidado reconhecido</h2><p>${consolidated.data.length} estudantes · ${consolidated.blocks.length} disciplinas · ano ${gradeImport.year}. Médias e grupos serão recalculados. Zero é nota; traço ou vazio é ausência.</p><form id="grades-consolidated"><p>A turma é obtida pelo CGM no cadastro do ano ${gradeImport.year}.</p>${pending.length?`<fieldset><legend>Turmas pendentes: ${pending.length}</legend><p>As notas abaixo ficarão pendentes. Confira o CGM e a turma no cadastro do ano letivo e reimporte o CSV depois da correção.</p><ul>${pending.map(r=>`<li>${h(r[2])} · CGM ${h(r[1])} · ${studentsForReferenceYear().some(s=>s.registration===String(r[1]).trim())?'Cadastro localizado, mas sem turma única confirmada no ano selecionado.':'CGM não localizado no cadastro; constar nas notas não confirma o vínculo cadastral.'}</li>`).join('')}</ul></fieldset>`:'<p>Todos os estudantes têm turma identificada no cadastro.</p>'}<div class="mapping-grid">${consolidated.blocks.map((b,i)=>{const suggested=aliases[b.name]||b.name;const match=subjects.find(s=>E.normalize(s)===E.normalize(suggested));return `<label>${h(b.name)}<input data-consolidated-subject="${i}" list="consolidated-subjects" required maxlength="200" value="${h(match||suggested)}"></label>`;}).join('')}</div><datalist id="consolidated-subjects">${subjects.map(s=>`<option value="${h(s)}">`).join('')}</datalist><p>Confira a turma e os nomes das disciplinas para atualizar os registros existentes. Notas ausentes limparão valores importados anteriores; correções manuais permanecem protegidas.</p><label class="check"><input type="checkbox" id="consolidated-replace-subjects" ${pending.length?'disabled':''}> Usar a lista do CSV como lista completa de disciplinas das turmas importadas</label><p class="notes">${pending.length?'A substituição fica indisponível até resolver os vínculos pendentes.':'Marque apenas se o arquivo trouxer todas as disciplinas dessas turmas.'} A prévia mostrará as disciplinas antigas a remover para o ano selecionado, inclusive para estudantes que não estão no arquivo. Disciplinas com correção manual protegida ficam na base.</p><button type="submit">Conferir importação</button></form><div id="grades-preview"></div>`;
+   $('#grades-mapping').innerHTML=`<h2>Consolidado reconhecido</h2>${consolidated.needsRosterNames?'<p>Este arquivo cont?m CGMs sem nomes. Nome e turma ser?o obtidos exclusivamente do cadastro pelo CGM.</p>':''}<p>${consolidated.data.length} estudantes · ${consolidated.blocks.length} disciplinas · ano ${gradeImport.year}. Médias e grupos serão recalculados. Zero é nota; traço ou vazio é ausência.</p><form id="grades-consolidated"><p>A turma é obtida pelo CGM no cadastro do ano ${gradeImport.year}.</p>${pending.length?`<fieldset><legend>Turmas pendentes: ${pending.length}</legend><p>As notas abaixo ficarão pendentes. Confira o CGM e a turma no cadastro do ano letivo e reimporte o CSV depois da correção.</p><ul>${pending.map(r=>`<li>${h(r[2])} · CGM ${h(r[1])} · ${studentsForReferenceYear().some(s=>s.registration===String(r[1]).trim())?'Cadastro localizado, mas sem turma única confirmada no ano selecionado.':'CGM não localizado no cadastro; constar nas notas não confirma o vínculo cadastral.'}</li>`).join('')}</ul></fieldset>`:'<p>Todos os estudantes têm turma identificada no cadastro.</p>'}<div class="mapping-grid">${consolidated.blocks.map((b,i)=>{const suggested=aliases[b.name]||b.name;const match=subjects.find(s=>E.normalize(s)===E.normalize(suggested));return `<label>${h(b.name)}<input data-consolidated-subject="${i}" list="consolidated-subjects" required maxlength="200" value="${h(match||suggested)}"></label>`;}).join('')}</div><datalist id="consolidated-subjects">${subjects.map(s=>`<option value="${h(s)}">`).join('')}</datalist><p>Confira a turma e os nomes das disciplinas para atualizar os registros existentes. Notas ausentes limparão valores importados anteriores; correções manuais permanecem protegidas.</p><label class="check"><input type="checkbox" id="consolidated-replace-subjects" ${pending.length?'disabled':''}> Usar a lista do CSV como lista completa de disciplinas das turmas importadas</label><p class="notes">${pending.length?'A substituição fica indisponível até resolver os vínculos pendentes.':'Marque apenas se o arquivo trouxer todas as disciplinas dessas turmas.'} A prévia mostrará as disciplinas antigas a remover para o ano selecionado, inclusive para estudantes que não estão no arquivo. Disciplinas com correção manual protegida ficam na base.</p><button type="submit">Conferir importação</button></form><div id="grades-preview"></div>`;
    return;
   }
   const header=gradeImport.sheets[gradeImport.sheet].rows[0]||[];
@@ -1189,7 +1193,7 @@ window.Edu = (() => {
   const linked=data.filter(row=>resolved.get(String(row[1]).trim()));
   const pending=resolved.size-new Set(linked.map(row=>String(row[1]).trim())).size;
   if(!linked.length)throw Error('Nenhum estudante tem turma confirmada neste ano. Corrija os vínculos no cadastro e reimporte o CSV.');
-  for(const row of linked)blocks.forEach(({col},i)=>incoming.push({year:gradeImport.year,registration:String(row[1]).trim(),name:String(row[2]).trim(),group:resolved.get(String(row[1]).trim()),discipline:$(`[data-consolidated-subject="${i}"]`).value.trim(),notes:[0,1,2].map(t=>E.gradeNumber(/^\s*[—–-]?\s*$/.test(String(row[col+t]??''))?null:row[col+t])),source:gradeImport.file,importedAt:now}));
+  for(const row of linked)blocks.forEach(({col},i)=>incoming.push({year:gradeImport.year,registration:String(row[1]).trim(),name:String(row[2]||db.students.find(s=>s.registration===String(row[1]).trim())?.name||'').trim(),group:resolved.get(String(row[1]).trim()),discipline:$(`[data-consolidated-subject="${i}"]`).value.trim(),notes:[0,1,2].map(t=>E.gradeNumber(/^\s*[—–-]?\s*$/.test(String(row[col+t]??''))?null:row[col+t])),source:gradeImport.file,importedAt:now}));
   E.validateGrades(incoming);
   const old=new Map((db.grades||[]).map(r=>[E.gradeKey(r),r]));
   const cleared=incoming.flatMap(r=>r.notes.flatMap((n,i)=>{const prev=old.get(E.gradeKey(r));return n===null&&prev?.notes[i]!=null&&!prev.manual?.[i]?[`${r.name} · ${r.discipline} · T${i+1}: ${gradeFormat(prev.notes[i])} → Sem Nota`]:[];}));
