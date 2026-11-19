@@ -17,3 +17,7 @@ console.log('PASS: general mean, missing disciplines/terms, zero, years, classes
 assert.equal(E.overallGrade(rows,'1','8 A',2026).mean,null);
 assert.equal(E.overallGrade(rows,'1','8 A',2026,['Arte','Matemática','História']).mean,null);
 assert.equal(E.overallGrade(rows,'1','8 A',2026,['Arte']).confirmed,false);
+const pending=E.overallGrade([r('1','Educação Física',[8,8,null])],'1','8 A',2026,['Educação Física']);
+assert.equal(pending.level.key,'missing');
+assert.deepEqual(pending.pending,[{discipline:'Educação Física',terms:['T3']}]);
+assert.deepEqual(E.overallGrade([r('1','Arte',[0,0,0])],'1','8 A',2026,['Arte']).pending,[]);

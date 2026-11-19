@@ -11,6 +11,7 @@ const {pathToFileURL}=require('url');
  try{const p=await b.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.message));await p.route('https://**',r=>r.abort());await p.addInitScript(seed=>{localStorage.setItem('eduanalytics_db_v1',JSON.stringify(seed));window.print=()=>{};},seed);
  await p.goto(pathToFileURL(app).href+'#seliga');await p.locator('[data-action=cloud-local-only]').click();await p.waitForFunction(()=>EduApp.getState().students[0].name==='Ana');await p.locator('#grades-group').selectOption('9º Ano D');
  assert.equal(await p.locator('.grade-matrix tbody tr').count(),5);
+ assert.match(await p.locator('.grade-matrix tbody tr').filter({has:p.getByRole('button',{name:'Eva',exact:true})}).innerText(),/Arte: falta T2/);
  await p.locator('#grades-level').selectOption('basic');assert.deepEqual(await p.locator('.grade-matrix .student-name').allTextContents(),['Ana']);
  await p.locator('#grades-discipline').selectOption('ARTE');assert.deepEqual(await p.locator('.grade-matrix .student-name').allTextContents(),['Bia']);
  await p.getByRole('button',{name:'Sem Nota: 3',exact:true}).click();assert.deepEqual(await p.locator('.grade-matrix .student-name').allTextContents(),['Caio','Duda','Eva']);

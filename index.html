@@ -169,7 +169,17 @@ window.Edu = (() => {
   if(!/^\d{4}-\d{2}-\d{2}$/.test(s)||!Number.isFinite(+new Date(s+'T12:00:00Z'))||new Date(s+'T12:00:00Z').toISOString().slice(0,10)!==s)throw Error('Data inválida: '+String(value).slice(0,30));
   return s;
  }
- function parseCSV(text){
+ const headerKey=value=>normalize(value).replace(/[^A-Z0-9]/g,'');
+ function headerMatches(row,names){const allowed=new Set(names.map(headerKey));return row.flatMap((v,i)=>allowed.has(headerKey(v))?[i]:[]);}
+ function headerColumns(row,aliases){
+  return Object.fromEntries(Object.entries(aliases).flatMap(([key,names])=>{const matches=headerMatches(row,names);return matches.length===1?[[key,matches[0]]]:[];}));
+ }
+ function headerIndex(rows,aliases){
+  let best=0,score=1;
+  rows.slice(0,50).forEach((row,i)=>{const map=headerColumns(row,aliases),count=Object.keys(map).length;if(count>score&&(!(aliases.registration||aliases.name)||map.registration!=null||map.name!=null)){best=i;score=count;}});
+  return best;
+ }
+ function parseCSV(text,headerLabels=[]){
   text=String(text).replace(/^\uFEFF/,'');if(!text.trim())throw Error('Arquivo CSV vazio.');
   let quoted=false,comma=0,semi=0;const counts=[];
   for(let i=0;i<text.length;i++){const c=text[i];if(c==='"'){if(quoted&&text[i+1]==='"'){i++;continue;}quoted=!quoted;}if(!quoted){if(c==='\n'||c==='\r'){counts.push([comma,semi]);comma=semi=0;if(c==='\r'&&text[i+1]==='\n')i++;}else if(c===',')comma++;else if(c===';')semi++;}}
@@ -186,7 +196,9 @@ window.Edu = (() => {
   }
   if(inQuotes)throw Error('CSV com campo entre aspas não fechado.');if(cell||row.length||closed)endRow();
   if(rows.length<1)throw Error('CSV vazio.');
-  const width=(rows.find(r=>r.length>1)||rows[0]).length;rows.forEach((r,i)=>{if(r.length>width)throw Error(`Linha ${i+1}: mais colunas que o cabeçalho.`);while(r.length<width)r.push('');});return rows;
+  const labels=new Set(headerLabels.map(headerKey));let header=0,best=1;
+  rows.slice(0,50).forEach((r,i)=>{const count=r.filter(v=>labels.has(headerKey(v))).length;if(count>best){header=i;best=count;}});
+  const width=(best>1?rows[header]:rows.find(r=>r.length>1)||rows[0]).length;rows.forEach((r,i)=>{if(i>=header&&r.length>width)throw Error(`Linha ${i+1}: mais colunas que o cabeçalho.`);while(r.length<width)r.push('');});return rows;
  }
  function csvCell(value){let s=String(value??'');if(/^[\s]*[=+@-]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';}
  const toCSV = rows => '\uFEFF'+rows.map(r=>r.map(csvCell).join(';')).join('\r\n');
@@ -252,6 +264,7 @@ window.Edu = (() => {
   incoming.forEach((record,i)=>{
    const r=structuredClone(record);r.name=String(r.name||'').trim();r.registration=String(r.registration||'').trim();
    const conflict=(reason,others)=>{const base=others||students.filter(s=>(r.registration&&s.registration===r.registration)||(r.name&&normalize(s.name)===normalize(r.name)));conflicts.push({reason,records:[...base.map(s=>({label:others?'Outra ocorrência no arquivo':'Cadastro atual',data:{registration:s.registration,name:s.name,group:s.group,series:s.series,birth:s.birth,period:r.period||s.period,classes:r.period&&s.frequencies?s.frequencies[r.period]?.classes:s.classes,absences:r.period&&s.frequencies?s.frequencies[r.period]?.absences:s.absences,documents:s.documents}})),{label:'Recebido no relatório',data:r}]});};
+   if(r.phone!=null){const value=String(r.phone).trim();if(!value||['NAOINFORMADO','NAOINFORMADA','NAOCONSTA','SEMINFORMACAO','SEMINFORMACOES','SEMDADOS'].includes(headerKey(value))||/^[-–—]+$/.test(value))r.phone='';else if(value.length>200||!/^[\d\s()+./-]+$/.test(value)||value.replace(/\D/g,'').length<7){conflict('Telefone inválido; o contato anterior foi preservado.');return;}}
    if(!r.registration&&!r.name){conflict('Sem matrícula e nome.');return;}
    const batchKey=(r.registration?'id:'+r.registration:'name:'+normalize(r.name))+':'+(r.period||'');if(seen.has(batchKey)){conflict('Registro repetido para o mesmo aluno e mês; revise turma/período.',[seen.get(batchKey)]);return;}seen.set(batchKey,r);
    let matches=r.registration?students.filter(s=>s.registration===r.registration):[];
@@ -404,7 +417,9 @@ window.Edu = (() => {
   const means=[...expected].map(key=>gradeSummary(bySubject.get(key)?.notes||[null,null,null]).mean);
   const complete=means.filter(n=>n!==null).length,total=expected.size;
   const mean=confirmed&&total&&complete===total?means.reduce((a,b)=>a+b,0)/total:null;
-  return {mean,complete,total,confirmed,level:GRADE_LEVELS[mean===null?3:mean<6?0:mean<7?1:2]};
+  const labels=new Map([...annual.map(r=>r.discipline),...(curriculum||[])].map(name=>[normalize(name),name]));
+  const pending=[...expected].flatMap(key=>{const record=bySubject.get(key),terms=[0,1,2].filter(t=>record?.notes[t]==null).map(t=>'T'+(t+1));return terms.length?[{discipline:record?.discipline||labels.get(key)||key,terms}]:[];});
+  return {mean,complete,total,confirmed,pending,level:GRADE_LEVELS[mean===null?3:mean<6?0:mean<7?1:2]};
  }
  const gradeKey=r=>JSON.stringify([r.year,r.registration,normalize(r.discipline)]);
  function disciplineIdentity(name){
@@ -472,8 +487,19 @@ window.Edu = (() => {
   return validateGrades([...records.values()]);
  }
  function consolidatedGrades(rows){
-  const studentHeaders=['NOME DO ESTUDANTE','ESTUDANTE','NOME DO ALUNO'];
-  let start=rows.findIndex(r=>normalize(r[1])==='CGM'&&studentHeaders.includes(normalize(r[2]))||normalize(r[2])==='CGM'&&studentHeaders.includes(normalize(r[1])));
+  const studentHeaders=['NOME DO ESTUDANTE','ESTUDANTE','NOME DO ALUNO','NOME','ALUNO'];
+  const identity=r=>headerColumns(r,{registration:['CGM','MATRICULA','MATRICULA CGM'],name:studentHeaders});
+  let start=rows.findIndex(r=>{const map=identity(r);return map.registration!=null&&map.name!=null&&!r.some(v=>['DISCIPLINA','COMPONENTECURRICULAR'].includes(headerKey(v)));}),declaredYears=[];
+  if(start>=0){
+   const head=rows[start],map=identity(head);let ordinal=head.findIndex(v=>['N','NO','NR','NRO','NUMERO'].includes(headerKey(v)));
+   if(ordinal<0&&!String(head[0]||'').trim()&&map.registration!==0&&map.name!==0)ordinal=0;
+   const dataStart=start+(head.some(v=>headerKey(v)==='T1')?1:2);
+   if(rows.slice(dataStart).some(r=>r.some(v=>String(v??'').trim())&&r.length!==head.length))throw Error('Linha inválida no consolidado: confira CGM, nome e quantidade de colunas.');
+   const yearColumns=head.flatMap((v,i)=>['ANO','ANOLETIVO'].includes(headerKey(v))?[i]:[]);
+   declaredYears=[...new Set(rows.slice(dataStart).flatMap(r=>yearColumns.map(i=>String(r[i]??'').trim()).filter(Boolean)).map(v=>{const year=Number(v);if(!Number.isInteger(year)||year<2000||year>2100)throw Error('Ano inválido no consolidado.');return year;}))];
+   const rest=head.map((_,i)=>i).filter(i=>![ordinal,map.registration,map.name].includes(i)&&!['TURMA','SERIE','TURNO','ANO','ANOLETIVO'].includes(headerKey(head[i])));
+   rows=rows.map(r=>[ordinal<0?'':r[ordinal],r[map.registration],r[map.name],...rest.map(i=>r[i])]);
+  }
   let needsRosterNames=false;
   if(start<0){start=rows.findIndex((r,i)=>['CGM','ESTUDANTE'].includes(normalize(r[1]))&&String(rows[i+1]?.[2]||'').trim()==='T1');if(start<0)return null;needsRosterNames=true;
    if(rows.slice(start+2).some(r=>r.some(v=>String(v??'').trim())&&!/^\d{5,15}$/.test(String(r[1]||'').trim())))throw Error('O consolidado sem nomes exige CGMs num?ricos na coluna ESTUDANTE ou CGM.');
@@ -496,7 +522,7 @@ window.Edu = (() => {
    if(row.length!==header.length||!/^\d{1,40}$/.test(String(row[1]||'').trim())||!needsRosterNames&&!String(row[2]||'').trim())throw Error('Linha inválida no consolidado: confira CGM, nome e quantidade de colunas.');
    for(const {col,name} of blocks)for(let t=0;t<3;t++){try{importGradeNumber(row[col+t]);}catch(err){throw Error('Linha '+(dataStart+1+index)+' / CGM '+row[1]+' / '+name+' / T'+(t+1)+' / valor '+String(row[col+t]).slice(0,30)+': '+err.message);}}
   }
-  return {blocks,data,...(needsRosterNames?{needsRosterNames:true}:{})};
+  return {blocks,data,...(needsRosterNames?{needsRosterNames:true}:{}),...(declaredYears.length?{declaredYears}:{})};
  }
  function parseGrades(rows,map,year,students=[]){
   if(!Number.isInteger(year)||year<2000||year>2100)throw Error('Ano letivo inválido.');
@@ -596,7 +622,8 @@ window.Edu = (() => {
   for(const [pageIndex,words] of pages.entries()){
    const nameHeader=words.find(w=>normalize(w.text)==='NOME DO ESTUDANTE'),numberHeader=words.find(w=>normalize(w.text).replace(/[^A-Z0-9]/g,'')==='N');
    if(!nameHeader||!numberHeader)throw Error('Página '+(pageIndex+1)+': identidade do consolidado não reconhecida.');
-   const hy=nameHeader.y,nameRight=cgmHeader.x-20,pageCGM=words.find(w=>normalize(w.text)==='CGM'&&Math.abs(w.y-hy)<2);
+   const hy=nameHeader.y,pageCGM=words.find(w=>normalize(w.text)==='CGM'&&Math.abs(w.y-hy)<2),scale=nameHeader.width/identityHeader.width||1;
+   const nameRight=pageCGM?pageCGM.x-20*scale:nameHeader.x+(cgmHeader.x-20-identityHeader.x)*scale;
    for(const title of words.filter(w=>w.y>hy+3&&w.y<hy+25).sort((a,b)=>a.x-b.x)){
     const name=title.text.trim();if(normalize(titles.at(-1))!==normalize(name))titles.push(name);
    }
@@ -701,7 +728,7 @@ window.Edu = (() => {
   return {p_grades:after.filter(r=>JSON.stringify(payload(old.get(gradeKey(r))||{notes:[]}))!==JSON.stringify(payload(r))).map(payload),p_removed_grades:before.filter(r=>!current.has(gradeKey(r))).map(r=>({year:r.year,registration:r.registration,disciplineKey:normalize(r.discipline)}))};
  }
 
- return {parseConsolidatedGradePDF,combineImageGrades,recoverStudentProfile,hasStudentIdentity,verifyRosterCoverage,recoverStudentNames,confirmedAbsence,overallGrade,consolidatedGrades,consolidatedGradeRemovals,imageGradeStudents,imageGradeRows,imageGradeSubjects,imageGradeEdges,gradeDistribution,consolidateGradeCalls,gradeDelta,parseGradePDF,suggestGradeLink,GRADE_LEVELS,gradeNumber,importGradeNumber,gradeSummary,gradeKey,validateGrades,mergeGrades,parseGrades,DOCS,IDEAL,LABELS,SPECIAL_COURSES,matchSpecialCourses,activeRosterStatus,isActiveRosterStudent,rosterPriority,normalize,esc,uid,today,dateISO,parseCSV,toCSV,series,number,docStatus,pending,metrics,isFinalYear,enrollmentSummary,month,migrateFrequency,monthlySummary,mergeStudentDatasets,validateEvents,deadline};
+ return {headerMatches,headerColumns,headerIndex,parseConsolidatedGradePDF,combineImageGrades,recoverStudentProfile,hasStudentIdentity,verifyRosterCoverage,recoverStudentNames,confirmedAbsence,overallGrade,consolidatedGrades,consolidatedGradeRemovals,imageGradeStudents,imageGradeRows,imageGradeSubjects,imageGradeEdges,gradeDistribution,consolidateGradeCalls,gradeDelta,parseGradePDF,suggestGradeLink,GRADE_LEVELS,gradeNumber,importGradeNumber,gradeSummary,gradeKey,validateGrades,mergeGrades,parseGrades,DOCS,IDEAL,LABELS,SPECIAL_COURSES,matchSpecialCourses,activeRosterStatus,isActiveRosterStudent,rosterPriority,normalize,esc,uid,today,dateISO,parseCSV,toCSV,series,number,docStatus,pending,metrics,isFinalYear,enrollmentSummary,month,migrateFrequency,monthlySummary,mergeStudentDatasets,validateEvents,deadline};
 })();
 </script>
 <script id="application">'use strict';
@@ -1061,7 +1088,10 @@ window.Edu = (() => {
  function overallTag(student,year=db.referenceYear){
   if(!E.hasStudentIdentity(student))return '<span class="tag warning">Identidade não confirmada</span>';
   const m=studentOverall(student,year);
-  return `<span class="tag grade-${m.level.key}" title="${m.confirmed?'Lista de disciplinas confirmada':'Confirme a lista completa de disciplinas da turma'} · ${m.complete}/${m.total} disciplinas completas · Média geral ${gradeFormat(m.mean)}">Geral: ${h(m.level.label)}${m.mean===null?'': ' · '+gradeFormat(m.mean)}</span>${m.mean===null?'<span class="notes">'+(m.confirmed?m.complete+'/'+m.total+' disciplinas completas':'Lista de disciplinas pendente de confirmação')+'</span>':''}`;
+  const describe=p=>p.discipline+': falta '+p.terms.join(', '),detail=m.pending.map(describe).join(' · ');
+  const title=(m.confirmed?'Lista de disciplinas confirmada':'Confirme a lista completa de disciplinas da turma')+' · '+m.complete+'/'+m.total+' disciplinas completas · Média geral '+gradeFormat(m.mean)+(detail?' · '+detail:'');
+  const reason=m.confirmed?m.complete+'/'+m.total+' disciplinas completas'+(m.pending.length?' · '+describe(m.pending[0])+(m.pending.length>1?' e mais '+(m.pending.length-1)+' disciplina(s)':''):''):'Lista de disciplinas pendente de confirmação';
+  return `<span class="tag grade-${m.level.key}" title="${h(title)}">Geral: ${h(m.level.label)}${m.mean===null?'': ' · '+gradeFormat(m.mean)}</span>${m.mean===null?'<span class="notes">'+h(reason)+'</span>':''}`;
  }
  async function recoverNames(){
   if(storageError||cloudConflict)return;
@@ -1271,15 +1301,16 @@ window.Edu = (() => {
   const consolidated=E.consolidatedGrades(gradeImport.sheets[gradeImport.sheet].rows);
   gradeImport.consolidated=consolidated;
   if(consolidated){
+   if(consolidated.declaredYears?.some(y=>y!==gradeImport.year))throw Error('O arquivo declara ano '+consolidated.declaredYears.join(', ')+'. Selecione o ano correspondente antes de importar.');
    const resolved=consolidatedRosterGroups(consolidated.data);
    const pending=[...new Map(consolidated.data.filter(r=>!resolved.get(String(r[1]).trim())).map(r=>[String(r[1]).trim(),r])).values()];
    const aliases={'ED. FÍSICA':'Educação Física','ED. DIGITAL':'Educação Digital'};
    const subjects=[...new Set((db.grades||[]).filter(r=>r.year===gradeImport.year).map(r=>r.discipline))];
-   $('#grades-mapping').innerHTML=`<h2>Consolidado reconhecido</h2>${consolidated.needsRosterNames?'<p>Este arquivo cont?m CGMs sem nomes. Nome e turma ser?o obtidos exclusivamente do cadastro pelo CGM.</p>':''}<p>${consolidated.data.length} estudantes · ${consolidated.blocks.length} disciplinas · ano ${gradeImport.year}. Médias e grupos serão recalculados. Zero é nota; traço ou vazio é ausência.</p><form id="grades-consolidated"><p>A turma é obtida pelo CGM no cadastro do ano ${gradeImport.year}.</p>${pending.length?`<fieldset><legend>Turmas pendentes: ${pending.length}</legend><p>As notas abaixo ficarão pendentes. Confira o CGM e a turma no cadastro do ano letivo e reimporte o arquivo depois da correção.</p><ul>${pending.map(r=>`<li>${h(r[2])} · CGM ${h(r[1])} · ${studentsForReferenceYear().some(s=>s.registration===String(r[1]).trim())?'Cadastro localizado, mas sem turma única confirmada no ano selecionado.':'CGM não localizado no cadastro; constar nas notas não confirma o vínculo cadastral.'}</li>`).join('')}</ul></fieldset>`:'<p>Todos os estudantes têm turma identificada no cadastro.</p>'}<div class="mapping-grid">${consolidated.blocks.map((b,i)=>{const suggested=aliases[b.name]||b.name;const match=subjects.find(s=>E.normalize(s)===E.normalize(suggested));return `<label>${h(b.name)}<input data-consolidated-subject="${i}" list="consolidated-subjects" required maxlength="200" value="${h(match||suggested)}"></label>`;}).join('')}</div><datalist id="consolidated-subjects">${subjects.map(s=>`<option value="${h(s)}">`).join('')}</datalist><p>Confira a turma e os nomes das disciplinas para atualizar os registros existentes. Notas ausentes limparão valores importados anteriores; correções manuais permanecem protegidas.</p><label class="check"><input type="checkbox" id="consolidated-replace-subjects" ${pending.length?'disabled':''}> Usar a lista do arquivo como lista completa de disciplinas das turmas importadas</label><p class="notes">${pending.length?'A substituição fica indisponível até resolver os vínculos pendentes.':'Marque apenas se o arquivo trouxer todas as disciplinas dessas turmas.'} A prévia mostrará as disciplinas antigas a remover para o ano selecionado, inclusive para estudantes que não estão no arquivo. Disciplinas com correção manual protegida ficam na base.</p><button type="submit">Conferir importação</button></form><div id="grades-preview"></div>`;
+   $('#grades-mapping').innerHTML=`<h2>Consolidado reconhecido</h2>${consolidated.needsRosterNames?'<p>Este arquivo cont?m CGMs sem nomes. Nome e turma ser?o obtidos exclusivamente do cadastro pelo CGM.</p>':''}<p>${consolidated.data.length} estudantes · ${consolidated.blocks.length} disciplinas · ano ${gradeImport.year}. Médias e grupos serão recalculados. Zero é nota; traço ou vazio é ausência.</p><form id="grades-consolidated"><p>A turma é obtida pelo CGM no cadastro do ano ${gradeImport.year}.</p>${pending.length?`<fieldset><legend>Turmas pendentes: ${pending.length}</legend><p>As notas abaixo ficarão pendentes. Confira o CGM e a turma no cadastro do ano letivo e reimporte o arquivo depois da correção.</p><ul>${pending.map(r=>`<li>${h(r[2])} · CGM ${h(r[1])} · ${studentsForReferenceYear().some(s=>s.registration===String(r[1]).trim())?'Cadastro localizado, mas sem turma única confirmada no ano selecionado.':'CGM não localizado no cadastro; constar nas notas não confirma o vínculo cadastral.'}</li>`).join('')}</ul></fieldset>`:'<p>Todos os estudantes têm turma identificada no cadastro.</p>'}<div class="mapping-grid">${consolidated.blocks.map((b,i)=>{const suggested=aliases[b.name]||b.name;const match=subjects.find(s=>E.normalize(s)===E.normalize(suggested));return `<label>${h(b.name)}<input data-consolidated-subject="${i}" list="consolidated-subjects" required maxlength="200" value="${h(match||suggested)}"></label>`;}).join('')}</div><datalist id="consolidated-subjects">${subjects.map(s=>`<option value="${h(s)}">`).join('')}</datalist><p>Confira a turma e os nomes das disciplinas para atualizar os registros existentes. Campos vazios preservam notas anteriores; correções manuais permanecem protegidas.</p><label class="check"><input type="checkbox" id="consolidated-replace-subjects" ${pending.length?'disabled':''}> Usar a lista do arquivo como lista completa de disciplinas das turmas importadas</label><p class="notes">${pending.length?'A substituição fica indisponível até resolver os vínculos pendentes.':'Marque apenas se o arquivo trouxer todas as disciplinas dessas turmas.'} A prévia mostrará as disciplinas antigas a remover para o ano selecionado, inclusive para estudantes que não estão no arquivo. Disciplinas com correção manual protegida ficam na base.</p><button type="submit">Conferir importação</button></form><div id="grades-preview"></div>`;
    return;
   }
-  const header=gradeImport.sheets[gradeImport.sheet].rows[0]||[];
-  $('#grades-mapping').innerHTML=`<h2>Conferir colunas</h2><p>${h(gradeImport.file)} · ano ${gradeImport.year}. Use a primeira linha como cabeçalho.</p><label>Aba<select id="grades-sheet">${gradeImport.sheets.map((s,i)=>option(String(i),s.name,String(gradeImport.sheet))).join('')}</select></label><form id="grades-map"><div class="mapping-grid">${GRADE_FIELDS.map(([key,label])=>{const index=header.findIndex(v=>GRADE_ALIASES[key].includes(E.normalize(v)));return `<label>${h(label)}<select data-grade-map="${key}">${option('','Não importar',index<0?'':'none')}${header.map((v,i)=>option(String(i),String(v||'Coluna '+(i+1)),String(index))).join('')}</select></label>`;}).join('')}</div><button class="mt" type="submit">Conferir importação</button></form><div id="grades-preview"></div>`;
+  const rows=gradeImport.sheets[gradeImport.sheet].rows,headerRow=E.headerIndex(rows,GRADE_ALIASES);gradeImport.header=headerRow;const header=rows[headerRow]||[];
+  $('#grades-mapping').innerHTML=`<h2>Conferir colunas</h2><p>${h(gradeImport.file)} · ano ${gradeImport.year}. Cabeçalho identificado na linha ${headerRow+1}. Confira as associações abaixo.</p><label>Aba<select id="grades-sheet">${gradeImport.sheets.map((s,i)=>option(String(i),s.name,String(gradeImport.sheet))).join('')}</select></label><form id="grades-map"><div class="mapping-grid">${GRADE_FIELDS.map(([key,label])=>{const index=E.headerColumns(header,GRADE_ALIASES)[key]??-1;return `<label>${h(label)}<select data-grade-map="${key}">${option('','Não importar',index<0?'':'none')}${header.map((v,i)=>option(String(i),String(v||'Coluna '+(i+1)),String(index))).join('')}</select></label>`;}).join('')}</div><button class="mt" type="submit">Conferir importação</button></form><div id="grades-preview"></div>`;
  }
  function previewConsolidatedGrades(){
   gradePreview=null;
@@ -1293,11 +1324,11 @@ window.Edu = (() => {
   for(const row of linked)blocks.forEach(({col},i)=>incoming.push({year:gradeImport.year,registration:String(row[1]).trim(),name:String(row[2]||db.students.find(s=>s.registration===String(row[1]).trim())?.name||'').trim(),group:resolved.get(String(row[1]).trim()),discipline:$(`[data-consolidated-subject="${i}"]`).value.trim(),notes:[0,1,2].map(t=>E.importGradeNumber(row[col+t])),source:gradeImport.file,importedAt:now}));
   E.validateGrades(incoming);
   const old=new Map((db.grades||[]).map(r=>[E.gradeKey(r),r]));
-  const cleared=incoming.flatMap(r=>r.notes.flatMap((n,i)=>{const prev=old.get(E.gradeKey(r));return n===null&&prev?.notes[i]!=null&&!prev.manual?.[i]?[`${r.name} · ${r.discipline} · T${i+1}: ${gradeFormat(prev.notes[i])} → Sem Nota`]:[];}));
+  const preserved=incoming.flatMap(r=>r.notes.flatMap((n,i)=>{const prev=old.get(E.gradeKey(r));return n===null&&prev?.notes[i]!=null&&!prev.manual?.[i]?[`${r.name} · ${r.discipline} · T${i+1}: ${gradeFormat(prev.notes[i])} → mantida`]:[];}));
   const existing=db.grades||[],replaceSubjects=pending===0&&$('#consolidated-replace-subjects').checked;
   const {removed,protectedRows}=replaceSubjects?E.consolidatedGradeRemovals(activeGradeRows(gradeImport.year),incoming):{removed:[],protectedRows:[]};
   const removedKeys=new Set(removed.map(E.gradeKey));
-  setGradePreview(incoming,true,existing.filter(r=>!removedKeys.has(E.gradeKey(r))));
+  setGradePreview(incoming,false,existing.filter(r=>!removedKeys.has(E.gradeKey(r))));
   if(replaceSubjects){
    gradePreview.curricula=[...new Set(incoming.map(r=>r.group))].map(group=>({year:gradeImport.year,group,disciplines:[...new Set(incoming.filter(r=>r.group===group).map(r=>r.discipline))]}));
    const details=(rows,label)=>rows.length?`<details><summary>${rows.length} ${label}</summary><ul>${rows.map(r=>`<li>${h(r.group)} · ${h(r.name)} (CGM ${h(r.registration)}) · ${h(r.discipline)} · ${r.notes.map(gradeFormat).join(' / ')}</li>`).join('')}</ul></details>`:'';
@@ -1305,14 +1336,14 @@ window.Edu = (() => {
   }
   const byGroup=new Map();
   for(const r of incoming){if(!byGroup.has(r.group))byGroup.set(r.group,new Set());byGroup.get(r.group).add(r.registration);}
-  $('#grades-preview').insertAdjacentHTML('afterbegin',`<p>Destino por turma no cadastro de ${gradeImport.year}: ${[...byGroup].map(([name,ids])=>h(name)+' · '+ids.size+' estudante(s)').join(' | ')}. Matrículas inativas ficam disponíveis na ficha.</p>${pending?`<p><strong>${pending} estudante(s) sem turma confirmada ficarão fora desta aplicação.</strong></p>`:''}<p>${cleared.length} nota(s) anterior(es) serão apagadas por ausência no CSV.</p>${cleared.length?`<details><summary>Ver notas que serão apagadas</summary><ul>${cleared.map(v=>`<li>${h(v)}</li>`).join('')}</ul></details>`:''}`);
+  $('#grades-preview').insertAdjacentHTML('afterbegin',`<p>Destino por turma no cadastro de ${gradeImport.year}: ${[...byGroup].map(([name,ids])=>h(name)+' · '+ids.size+' estudante(s)').join(' | ')}. Matrículas inativas ficam disponíveis na ficha.</p>${pending?`<p><strong>${pending} estudante(s) sem turma confirmada ficarão fora desta aplicação.</strong></p>`:''}<p>${preserved.length} nota(s) anterior(es) serão preservadas onde o arquivo não informa nota.</p>${preserved.length?`<details><summary>Ver notas anteriores preservadas</summary><ul>${preserved.map(v=>`<li>${h(v)}</li>`).join('')}</ul></details>`:''}`);
  }
  function previewGrades(){
   gradePreview=null;
   if(gradeImport.year!==db.referenceYear)throw Error('O ano mudou. Leia o arquivo novamente.');
   const map=Object.fromEntries($$('[data-grade-map]').map(el=>[el.dataset.gradeMap,el.value===''?null:Number(el.value)]));
   const roster=studentsForReferenceYear().map(s=>s.group?{...s,group:group(s)}:s);
-  const incoming=E.parseGrades(gradeImport.sheets[gradeImport.sheet].rows.slice(1),map,gradeImport.year,roster);
+  const incoming=E.parseGrades(gradeImport.sheets[gradeImport.sheet].rows.slice((gradeImport.header||0)+1),map,gradeImport.year,roster);
   setGradePreview(incoming.map(r=>({...r,source:gradeImport.file,importedAt:new Date().toISOString()})));
  }
  function exportGrades(){
@@ -1409,32 +1440,27 @@ window.Edu = (() => {
   foreignPreview=null;
   const target=$('#foreign-preview'),file=form.querySelector('input').files[0],base=db;
   target.replaceChildren();
-  const [{rows}]=await fileRows(file);
+  const [{rows:sourceRows}]=await fileRows(file);
   if(!form.isConnected||base!==db)return;
-  const header=rows[0].map(E.normalize);
-  const cgm=header.indexOf('CGM'),name=header.indexOf('NOME DO ESTUDANTE');
-  const origin=header.includes('PAIS DE ORIGEM')?header.indexOf('PAIS DE ORIGEM'):header.indexOf('COLUNA 1');
+  const aliases={registration:['CGM'],name:['Nome do estudante','Nome do aluno','Nome'],origin:['País de origem','Coluna 1']};
+  const rows=sourceRows.slice(E.headerIndex(sourceRows,aliases)),map=E.headerColumns(rows[0],aliases);
+  if(E.headerMatches(rows[0],aliases.registration).length>1)throw Error('Há mais de uma coluna CGM. Identifique uma única coluna antes de importar os países.');
+  const cgm=map.registration??-1,name=map.name??-1,origin=map.origin??-1;
   if(name<0||origin<0)throw Error('O CSV precisa das colunas Nome do Estudante e País de origem (ou Coluna 1). O CGM é opcional.');
-  const byName=new Map(),rosterNames=new Map(),byCgm=new Map(db.students.filter(s=>s.registration).map(s=>[s.registration,s]));
+  const rosterNames=new Map(),byCgm=new Map(db.students.filter(s=>s.registration).map(s=>[s.registration,s]));
   for(const student of db.students){
    const key=E.normalize(student.name);
    if(!rosterNames.has(key))rosterNames.set(key,[]);
    rosterNames.get(key).push(student);
-  }
-  for(const row of rows.slice(1)){
-   const id=String(row[cgm]||'').trim(),person=E.normalize(row[name]);
-   if(!/^\d{1,40}$/.test(id)||!person)continue;
-   if(!byName.has(person))byName.set(person,new Set());
-   byName.get(person).add(id);
   }
   const candidates=new Map(),issues=[];
   for(const [index,row] of rows.slice(1).entries()){
    const raw=String(row[origin]||'').trim();
    if(!raw)continue;
    const country=countryCodes.get(E.normalize(raw));
-   const person=E.normalize(row[name]),ids=byName.get(person),matches=rosterNames.get(person)||[];
+   const person=E.normalize(row[name]),matches=rosterNames.get(person)||[];
    const provided=String(row[cgm]||'').trim();
-   const student=provided?byCgm.get(provided):ids?.size===1?byCgm.get([...ids][0]):!ids&&matches.length===1?matches[0]:null;
+   const student=provided?byCgm.get(provided):matches.length===1?matches[0]:null;
    if(!country||!student||!person||E.normalize(student.name)!==person){
     issues.push(`Linha ${index+2} · ${row[name]||'Sem nome'} · ${!country?'País não reconhecido':'Vínculo não confirmado'}`);
     continue;
@@ -1507,7 +1533,7 @@ window.Edu = (() => {
  function library(name,url){if(window[name])return Promise.resolve(window[name]);if(libraryPromises[name])return libraryPromises[name];return libraryPromises[name]=new Promise((resolve,reject)=>{let s=document.createElement('script'),timer=setTimeout(()=>{delete libraryPromises[name];reject(Error('Biblioteca indisponível. Conecte à internet e tente novamente; CSV continua disponível offline.'));},18000);s.src=url;s.async=true;s.onload=()=>{clearTimeout(timer);if(window[name])resolve(window[name]);else{delete libraryPromises[name];reject(Error('Falha ao carregar biblioteca.'));}};s.onerror=()=>{clearTimeout(timer);delete libraryPromises[name];reject(Error('Sem acesso à biblioteca. Use CSV ou reconecte para importar este formato.'));};document.head.appendChild(s);});}
  async function fileRows(file){
   if(file.size>20*1024*1024)throw Error('O arquivo excede 20 MB.');let ext=file.name.split('.').pop().toLowerCase(),buf=await file.arrayBuffer();
-  if(ext==='csv'){let text;try{text=new TextDecoder('utf-8',{fatal:true}).decode(buf);}catch{text=new TextDecoder('windows-1252').decode(buf);}return [{name:'CSV',rows:E.parseCSV(text)}];}
+  if(ext==='csv'){let text;try{text=new TextDecoder('utf-8',{fatal:true}).decode(buf);}catch{text=new TextDecoder('windows-1252').decode(buf);}return [{name:'CSV',rows:E.parseCSV(text,[...Object.values(ALIASES).flat(),...Object.values(GRADE_ALIASES).flat(),'País de origem','Coluna 1','inicio','fim','tipo','descricao'])}];}
   if(!['xlsx','xls'].includes(ext))throw Error('Selecione CSV, XLSX ou XLS; para PDF escolha o tipo correspondente.');
   const XLSX=await library('XLSX','https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js');let w=XLSX.read(buf,{type:'array',cellDates:true});return w.SheetNames.map(name=>({name,rows:XLSX.utils.sheet_to_json(w.Sheets[name],{header:1,defval:'',raw:true})}));
  }
@@ -1530,22 +1556,31 @@ window.Edu = (() => {
  function discardGradeImages(){for(const image of gradeImport?.images||[])URL.revokeObjectURL(image.url);}
  async function pdfPages(file){if(file.size>20*1024*1024)throw Error('PDF excede 20 MB.');const pdfjs=await library('pdfjsLib','https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');pdfjs.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';let pdf=await pdfjs.getDocument({data:await file.arrayBuffer(),isEvalSupported:false}).promise;if(pdf.numPages>150)throw Error('Limite de 150 páginas.');const pages=[];try{for(let i=1;i<=pdf.numPages;i++){const p=await pdf.getPage(i),content=await p.getTextContent();const viewport=p.getViewport({scale:1});pages.push(content.items.filter(x=>x.str?.trim()).map(x=>{const t=pdfjs.Util.transform(viewport.transform,x.transform);return {text:x.str,x:t[4],y:-t[5],width:x.width};}));p.cleanup();}}finally{await pdf.destroy();}return pages;}
  function parseFrequencyPage(words,pageNumber){
-  const rows=[],issues=[];
-  const header=label=>words.find(w=>E.normalize(w.text.trim())===label);
-  const aula=header('AULA'),falta=header('FALTA'),freq=header('FREQ'),dias=header('LETIV');
-  if(!aula||!falta||!freq||!dias){return {rows,issues:['Página '+pageNumber+': colunas de totais não reconhecidas.']};}
-  const ids=words.filter(w=>w.x<165&&/\(\d{5,15}\)/.test(w.text));
-  for(const idw of ids){
-   const ident=idw.text.match(/\((\d{5,15})\)/)[1];
-   const candidates=words.filter(w=>w.x>(dias.x+aula.x)/2&&w.x<(aula.x+falta.x)/2&&Math.abs(w.y-idw.y)<12&&/^\d+$/.test(w.text.trim())).sort((a,b)=>Math.abs(a.y-idw.y)-Math.abs(b.y-idw.y));
-   const a=candidates[0];if(!a){issues.push('Página '+pageNumber+': aulas não identificadas para CGM '+ident);continue;}
-   const f=words.find(w=>w.x>=(aula.x+falta.x)/2&&w.x<(falta.x+freq.x)/2&&Math.abs(w.y-a.y)<2&&/^\d+$/.test(w.text.trim()));
-   const percent=words.find(w=>w.x>=(falta.x+freq.x)/2&&w.x<freq.x+35&&Math.abs(w.y-a.y)<2&&/^\d+(?:[.,]\d*)?$/.test(w.text.trim()));
-   if(!f||!percent){issues.push('Página '+pageNumber+': totais incompletos para CGM '+ident);continue;}
-   const classes=Number(a.text),absences=Number(f.text),printed=Number(percent.text.replace(',','.'));
-   if(absences>classes||(classes>0&&Math.abs(100*(classes-absences)/classes-printed)>.15)){issues.push({reason:'Aulas, faltas e percentual não conferem.',records:[{label:'Valores do relatório',data:{registration:ident,classes,absences,percentage:printed}},{label:'Cálculo a partir dos totais',data:{registration:ident,classes,absences,percentage:classes>0?Number((100*(classes-absences)/classes).toFixed(2)):'Não calculável'}}]});continue;}
-   const n=words.filter(w=>w.x>=165&&w.x<355&&Math.abs(w.y-a.y)<12).sort((a,b)=>b.y-a.y||a.x-b.x).map(w=>w.text).join(' ').replace(/\(\d{2}\/\d{2}\/\d{4}\)/g,'').trim();
-   const turma=words.filter(w=>w.x<155&&Math.abs(w.y-a.y)<12).sort((a,b)=>b.y-a.y||a.x-b.x).map(w=>w.text).join(' ').replace(/\(\d{5,15}\)/g,'').trim();
+  const rows=[],issues=[],map=E.headerColumns(words.map(w=>w.text),{aula:['AULA','AULAS DADAS'],falta:['FALTA','FALTAS'],freq:['FREQ','FREQUENCIA'],dias:['LETIV','DIAS LETIVOS']});
+  if(Object.keys(map).length!==4)return {rows,issues:['Página '+pageNumber+': colunas de totais ausentes ou ambíguas.']};
+  const heads=Object.entries(map).map(([key,i])=>({key,...words[i]})).sort((a,b)=>a.x-b.x),headerY=Math.min(...heads.map(w=>w.y));
+  const nameHeads=words.filter(w=>['NOME','ALUNO','NOME DO ALUNO','NOME DO ESTUDANTE'].includes(E.normalize(w.text))&&Math.abs(w.y-headerY)<30);
+  if(nameHeads.length>1)return {rows,issues:['Página '+pageNumber+': coluna de nome ambígua.']};
+  const nameHead=nameHeads[0],idHead=words.find(w=>E.normalize(w.text)==='CGM'&&Math.abs(w.y-headerY)<30);
+  const nameLeft=nameHead?(idHead?(idHead.x+idHead.width+nameHead.x)/2:nameHead.x-15):165,nameRight=nameHead?heads[0].x:355;
+  const ids=words.filter(w=>w.x<nameLeft&&w.y<headerY-3&&/\(\d{5,15}\)/.test(w.text)).sort((a,b)=>b.y-a.y);
+  for(const [i,idw] of ids.entries()){
+   const spacing=i?ids[i-1].y-idw.y:i+1<ids.length?idw.y-ids[i+1].y:24;
+   const ident=idw.text.match(/\((\d{5,15})\)/)[1],top=i?(ids[i-1].y+idw.y)/2:Math.min(headerY-3,idw.y+spacing/2),bottom=i+1<ids.length?(idw.y+ids[i+1].y)/2:idw.y-spacing/2;
+   const line=words.filter(w=>w.y<top&&w.y>bottom),values={};let valid=true;
+   for(const [index,head] of heads.entries()){
+    const left=index?(heads[index-1].x+heads[index-1].width/2+head.x+head.width/2)/2:nameRight;
+    const right=index+1<heads.length?(head.x+head.width/2+heads[index+1].x+heads[index+1].width/2)/2:head.x+head.width+35;
+    const cells=line.filter(w=>w.x>=left&&w.x<right);
+    if(head.key==='dias')continue;
+    if(cells.length!==1||!/^\d+(?:[.,]\d*)?$/.test(cells[0].text.trim())){valid=false;break;}
+    values[head.key]=Number(cells[0].text.replace(',','.'));
+   }
+   if(!valid){issues.push('Página '+pageNumber+': totais ausentes ou ambíguos para CGM '+ident);continue;}
+   const classes=values.aula,absences=values.falta,printed=values.freq;
+   if(!Number.isInteger(classes)||!Number.isInteger(absences)||absences>classes||(classes>0&&Math.abs(100*(classes-absences)/classes-printed)>.15)){issues.push({reason:'Aulas, faltas e percentual não conferem.',records:[{label:'Valores do relatório',data:{registration:ident,classes,absences,percentage:printed}}]});continue;}
+   const n=line.filter(w=>w.x>=nameLeft&&w.x<nameRight).sort((a,b)=>b.y-a.y||a.x-b.x).map(w=>w.text).join(' ').replace(/\(\d{2}\/\d{2}\/\d{4}\)/g,'').trim();
+   const turma=line.filter(w=>w.x<nameLeft).sort((a,b)=>b.y-a.y||a.x-b.x).map(w=>w.text).join(' ').replace(/\(\d{5,15}\)/g,'').trim();
    const grade=[...turma.matchAll(/([1-9])[ºª°]\s*(?:Ano|Série)/gi)].at(-1),letter=turma.match(/(?:Manhã|Tarde|Noite)\s*-\s*([A-Z])/i);
    const group=grade&&letter?grade[1]+'º '+(Number(grade[1])>=6?'Ano':'EM')+' '+letter[1]:turma;
    if(!n){issues.push('Página '+pageNumber+': nome não identificado para CGM '+ident);continue;}
@@ -1608,25 +1643,22 @@ window.Edu = (() => {
  const BATCH_KINDS={grades:'Notas trimestrais · Se Liga!',roster:'Relação por turma',frequency:'Frequência',enrollment:'Confirmação de matrícula',general:'Cadastro ou documentos'};
  let batchFiles=[],batchPreview=null,batchReading=false;
  const knownBatchIds=()=>new Set((db.imports||[]).map(r=>r.fingerprint).filter(Boolean));
- function guessColumns(header){
-  const normalized=header.map(E.normalize);
-  return Object.fromEntries(FIELDS.map(([key])=>[key,normalized.findIndex(value=>ALIASES[key]?.includes(value))]).filter(([,index])=>index>=0));
- }
- function selectBatchSheet(file,index){
-  file.sheet=index;
-  const rows=file.sheets[index].rows;
-  let best=-1;
-  file.header=0;
-  for(let i=0;i<Math.min(rows.length,25);i++){
-   const map=guessColumns(rows[i]),score=Object.keys(map).length;
-   if((map.registration!=null||map.name!=null)&&score>best){best=score;file.header=i;}
+ function findGradeSheet(sheets){
+  const named=s=>/CONSOLIDADO(?: DE)? NOTAS/.test(E.normalize(s.name));
+  for(const sheet of [...sheets].sort((a,b)=>Number(named(b))-Number(named(a)))){
+   const header=E.headerColumns(sheet.rows[E.headerIndex(sheet.rows,GRADE_ALIASES)]||[],GRADE_ALIASES);
+   if(header.registration!=null&&header.discipline!=null&&['t1','t2','t3'].some(k=>header[k]!=null))return sheet;
+   if(sheet.rows.slice(0,50).some(row=>['T1','T2','T3'].every(t=>row.some(v=>E.normalize(v)===t)))&&E.consolidatedGrades(sheet.rows))return sheet;
   }
-  file.map=guessColumns(rows[file.header]||[]);
+  return null;
  }
+ function guessColumns(header){return E.headerColumns(header,ALIASES);}
+ function selectBatchSheet(file,index){file.sheet=index;file.header=E.headerIndex(file.sheets[index].rows,ALIASES);file.map=guessColumns(file.sheets[index].rows[file.header]||[]);}
  function detectBatchKind(file){
+  if(file.gradeSheet)return 'grades';
   if(file.pdfPages){
    const text=file.pdfPages.slice(0,2).flatMap(page=>page.map(w=>E.normalize(w.text)));
-   if(text.join(' ').includes('ACOMPANHAMENTO TRIMESTRAL'))return 'grades';
+   if(text.join(' ').includes('ACOMPANHAMENTO TRIMESTRAL')||['CGM','NOME DO ESTUDANTE','T1'].every(v=>text.includes(v)))return 'grades';
    if(text.some(t=>t.includes('RELACAO DE ALUNOS POR TURMA')))return 'roster';
    if(['AULA','FALTA','FREQ','LETIV'].every(t=>text.includes(t)))return 'frequency';
    return '';
@@ -1651,10 +1683,10 @@ window.Edu = (() => {
  }
  async function parseBatchPDF(file){
   file.sheets=[];
-  file.parseError='';file.gradeReport=null;
+  file.parseError='';file.gradeReport=null;file.gradeSheet=null;
   if(!file.kind)return;
   try{
-   if(file.kind==='grades'){file.gradeReport=E.parseGradePDF(file.pdfPages);return;}
+   if(file.kind==='grades'){file.gradeSheet=E.parseConsolidatedGradePDF(file.pdfPages);if(!file.gradeSheet)file.gradeReport=E.parseGradePDF(file.pdfPages);return;}
    const parsed=await schoolPDF({name:file.file},file.kind,file.pdfPages);
    file.sheets=parsed.sheets;
    file.issues=parsed.issues;
@@ -1686,7 +1718,9 @@ window.Edu = (() => {
       await parseBatchPDF(file);
      }else{
       file.sheets=await fileRows(input);
-      selectBatchSheet(file,0);
+      const gradeSheet=findGradeSheet(file.sheets);
+      if(gradeSheet)file.gradeSheet=gradeSheet;
+      selectBatchSheet(file,gradeSheet?file.sheets.indexOf(gradeSheet):0);
       file.kind=detectBatchKind(file);
       if(file.kind==='frequency')file.period=guessBatchPeriod(file);
      }
@@ -1702,6 +1736,7 @@ window.Edu = (() => {
   return E.month(match?match[2]+'-'+match[1].padStart(2,'0'):raw);
  }
  function batchRecord(row,file,line){
+  if(file.map.registration==null&&E.headerMatches(file.sheets[file.sheet].rows[file.header],ALIASES.registration).length>1)throw Error('Selecione a coluna CGM correta; há mais de uma identificação no cabeçalho.');
   const record={documents:{},_line:line,...(row.sourcePage?{_page:row.sourcePage}:{})};
   for(const [key,index] of Object.entries(file.map)){
    const raw=row[index];
@@ -1894,11 +1929,11 @@ window.Edu = (() => {
   renderBatchPreview();
  }
 
- const pendingGradeFiles=()=>batchFiles.filter(f=>f.kind==='grades'&&f.gradeReport&&!f.duplicate&&!f.error&&!f.parseError);
+ const pendingGradeFiles=()=>batchFiles.filter(f=>f.kind==='grades'&&(f.gradeReport||f.gradeSheet)&&!f.duplicate&&!f.error&&!f.parseError);
  function openBatchGrades(id){
   const file=pendingGradeFiles().find(f=>!id||f.id===id);
   if(!file)throw Error('Nenhum relatório de notas pronto para conferir.');
-  gradeImport={file:file.file,pdf:file.gradeReport,year:file.gradeReport.year,batchId:file.id};gradePreview=null;
+  discardGradeImages();gradeImport=file.gradeSheet?{file:file.file,sheets:[file.gradeSheet],sheet:0,year:db.referenceYear,batchId:file.id}:{file:file.file,pdf:file.gradeReport,year:file.gradeReport.year,batchId:file.id};gradePreview=null;
   location.hash='seliga';render();
  }
 
@@ -1927,6 +1962,7 @@ window.Edu = (() => {
    ${file.kind==='roster'? `<label>Data da relação completa da escola (opcional)<input type="date" data-batch-field="completeDate" max="${E.today()}" value="${h(file.completeDate||'')}"></label><p class="notes">Preencha somente quando o arquivo listar toda a escola. As ausências aparecem para confirmação na prévia.</p>`:''}
    ${file.kind==='roster'&&file.map.rosterDate==null?`<label>Ano letivo<input type="number" min="2000" max="2100" data-batch-field="schoolYear" value="${h(file.schoolYear||db.referenceYear)}"></label>`:''}</div>
    ${file.parseError?`<p class="message">${h(file.parseError)}</p>`:''}
+   ${file.kind==='grades'&&file.gradeSheet?`<p>Notas por CGM · ano selecionado ${db.referenceYear}</p><button class="secondary" data-action="batch-grades" data-value="${h(file.id)}">Conferir notas deste arquivo</button>`:''}
    ${file.kind==='grades'&&file.gradeReport?`<p>${h(file.gradeReport.group)} · ${file.gradeReport.year} · ${file.gradeReport.students.length} estudantes · ${file.gradeReport.students[0].subjects.length} disciplinas</p><button class="secondary" data-action="batch-grades" data-value="${h(file.id)}">Conferir notas deste arquivo</button>`:''}
    ${header.length?`<details ${file.map.registration==null&&file.map.name==null?'open':''}><summary>Revisar colunas</summary>
     <div class="form-grid"><label>Aba<select data-batch-field="sheet">${file.sheets.map((s,i)=>option(String(i),s.name,String(file.sheet))).join('')}</select></label><label>Linha do cabeçalho<input type="number" min="1" max="${Math.min(file.sheets[file.sheet].rows.length,100)}" value="${file.header+1}" data-batch-field="header"></label></div>
@@ -2003,8 +2039,10 @@ window.Edu = (() => {
    file.kind=el.value;
    if(file.pdfPages)await parseBatchPDF(file);
   }else if(field==='sheet'){
+   const wasGrades=file.kind==='grades';file.gradeSheet=null;
    selectBatchSheet(file,Number(el.value));
-   file.kind=detectBatchKind(file);
+   try{file.gradeSheet=findGradeSheet([file.sheets[file.sheet]]);file.parseError=wasGrades&&!file.gradeSheet?'Esta aba não contém notas reconhecidas. Selecione a aba do consolidado.':'';}catch(error){file.parseError=error.message;}
+   file.kind=wasGrades?'grades':detectBatchKind(file);
   }else if(field==='header'){
    const row=Number(el.value)-1,rows=file.sheets[file.sheet].rows;
    if(!Number.isInteger(row)||row<0||row>=rows.length)throw Error('Linha do cabeçalho inválida.');
@@ -2037,10 +2075,10 @@ window.Edu = (() => {
  });
  function showMapping(reset=true){
   const sheet=importData.sheets[importData.sheet||0],rows=sheet.rows;
-  if(reset){importData.header=Math.max(0,rows.slice(0,25).findIndex(r=>r.some(c=>['CGM','MATRICULA','NOME','CGMALUNO'].includes(E.normalize(c)))));mergePreview=null;}
+  if(reset){importData.header=E.headerIndex(rows,ALIASES);mergePreview=null;}
   const header=rows[importData.header]||[];
   if(!importData.kindChosen&&['general','enrollment'].includes(importData.kind)){const names=header.map(E.normalize);if(['CGMALUNO','NOMEALUNO','SERIESEGUINTE','INDNUMSERIESEGUINTE'].every(k=>names.includes(k)))importData.kind='enrollment';}
-  $('#mapping-body').innerHTML=`<button class="close" data-action="close-mapping">Fechar</button><h2 id="mapping-title">Mapear colunas</h2><p>${h(importData.file)} · ${Math.max(0,rows.length-importData.header-1)} linhas</p><div class="form-grid"><label>Aba<select id="map-sheet">${importData.sheets.map((s,i)=>option(String(i),s.name,String(importData.sheet||0))).join('')}</select></label><label>Linha do cabeçalho<input id="map-header" type="number" min="1" max="${Math.min(rows.length,30)}" value="${importData.header+1}"></label></div><div class="message info">Campos vazios não apagam valores existentes. CGMs diferentes identificam cadastros distintos. Quando o nome não é suficiente para identificar o aluno, o registro fica para revisão. Atualizações guardam o valor anterior no histórico.</div>${importData.issues?.length?`<details><summary>${importData.issues.length} aviso(s) de leitura</summary>${renderIssues(importData.issues)}</details>`:''}<form id="mapping-form">${['general','enrollment'].includes(importData.kind)?`<label class="mt">Como aplicar este relatório<select id="map-kind">${option('general','Atualizar cadastro, documentos ou frequência',importData.kind)}${option('enrollment','Atualizar lista de matrículas confirmadas',importData.kind)}</select></label>${importData.kind==='enrollment'?'<p class="message info">Relatório de confirmações reconhecido. A aplicação atualizará os indicadores de matrícula na visão geral.</p>':''}`:''}${importData.kind!=='enrollment'?importMonthFields('map-period',importData.period):''}<div class="mapping-grid">${FIELDS.map(([key,label])=>{const guessed=header.findIndex(c=>(ALIASES[key]||[]).includes(E.normalize(c)));return `<label>${h(label)}<select data-map="${key}">${option('','Não importar','')}${header.map((c,i)=>option(String(i),`${i+1}. ${String(c||'Sem título')}`,guessed>=0?String(guessed):'')).join('')}</select></label>`;}).join('')}</div><button class="mt" type="submit">Conferir cruzamento</button></form><div id="merge-result"></div>`;
+  $('#mapping-body').innerHTML=`<button class="close" data-action="close-mapping">Fechar</button><h2 id="mapping-title">Mapear colunas</h2><p>${h(importData.file)} · ${Math.max(0,rows.length-importData.header-1)} linhas</p><div class="form-grid"><label>Aba<select id="map-sheet">${importData.sheets.map((s,i)=>option(String(i),s.name,String(importData.sheet||0))).join('')}</select></label><label>Linha do cabeçalho<input id="map-header" type="number" min="1" max="${Math.min(rows.length,50)}" value="${importData.header+1}"></label></div><div class="message info">Campos vazios não apagam valores existentes. CGMs diferentes identificam cadastros distintos. Quando o nome não é suficiente para identificar o aluno, o registro fica para revisão. Atualizações guardam o valor anterior no histórico.</div>${importData.issues?.length?`<details><summary>${importData.issues.length} aviso(s) de leitura</summary>${renderIssues(importData.issues)}</details>`:''}<form id="mapping-form">${['general','enrollment'].includes(importData.kind)?`<label class="mt">Como aplicar este relatório<select id="map-kind">${option('general','Atualizar cadastro, documentos ou frequência',importData.kind)}${option('enrollment','Atualizar lista de matrículas confirmadas',importData.kind)}</select></label>${importData.kind==='enrollment'?'<p class="message info">Relatório de confirmações reconhecido. A aplicação atualizará os indicadores de matrícula na visão geral.</p>':''}`:''}${importData.kind!=='enrollment'?importMonthFields('map-period',importData.period):''}<div class="mapping-grid">${FIELDS.map(([key,label])=>{const guessed=E.headerColumns(header,ALIASES)[key]??-1;return `<label>${h(label)}<select data-map="${key}">${option('','Não importar','')}${header.map((c,i)=>option(String(i),`${i+1}. ${String(c||'Sem título')}`,guessed>=0?String(guessed):'')).join('')}</select></label>`;}).join('')}</div><button class="mt" type="submit">Conferir cruzamento</button></form><div id="merge-result"></div>`;
   if(!$('#mapping').open)$('#mapping').showModal();
  }
  function importMonthFields(prefix,period=''){
@@ -2057,6 +2095,7 @@ window.Edu = (() => {
  }
  function prepareMerge(){
   const map=Object.fromEntries($$('[data-map]').filter(s=>s.value!=='').map(s=>[s.dataset.map,Number(s.value)])),vals=Object.values(map);
+  if(map.registration==null&&E.headerMatches(importData.sheets[importData.sheet||0].rows[importData.header],ALIASES.registration).length>1)throw Error('Selecione a coluna CGM correta; há mais de uma identificação no cabeçalho.');
   if(new Set(vals).size!==vals.length)throw Error('Uma coluna foi associada a mais de um campo. Revise o mapeamento.');if(map.registration==null&&map.name==null)throw Error('Mapeie matrícula ou nome.');if(importData.kind==='roster'&&map.status==null)throw Error('Mapeie a coluna Situação. Só Matriculado e Sem Frequência entram no total.');
   const rows=importData.sheets[importData.sheet||0].rows.slice(importData.header+1),incoming=[],issues=[],reports=importData.files||[{id:E.uid(),file:importData.file,start:0,end:Infinity}];
   if(importData.kind==='enrollment'){prepareEnrollment(map,rows);return;}
@@ -2137,7 +2176,10 @@ window.Edu = (() => {
    const months={JAN:1,FEV:2,MAR:3,ABR:4,MAI:5,JUN:6,JUL:7,AGO:8,SET:9,OUT:10,NOV:11,DEZ:12};for(const m of clean.matchAll(/(\d{1,2})[º°O]?\s+(JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\s*[-–—]\s*/g)){const start=`${year}-${String(months[m[2]]).padStart(2,'0')}-${m[1].padStart(2,'0')}`;if(!events.some(e=>e.kind==='feriado'&&e.start===start))events.push({start,end:start,kind:'feriado',label:'Feriado indicado no PDF'});}
    warning='Extração parcial: confira cores, feriados municipais e intervalos no PDF. Dias marcados somente por cor podem não ser reconhecidos. Nenhuma data foi ativada automaticamente.';if(!events.length)warning='Este PDF não apresentou datas textuais reconhecíveis. Consulte o original e cadastre os períodos, ou importe o modelo CSV preenchido.';
    if(pdfURL)URL.revokeObjectURL(pdfURL);pdfURL=URL.createObjectURL(file);
-  }else{const sheets=await fileRows(file),rows=sheets[0].rows,head=rows[0].map(E.normalize),index=k=>head.indexOf(k);if(index('INICIO')<0||index('TIPO')<0)throw Error('Use as colunas inicio, fim, tipo e descricao do modelo de calendário.');events=rows.slice(1).filter(r=>r.some(v=>String(v).trim())).map(r=>({start:E.dateISO(r[index('INICIO')]),end:E.dateISO(r[index('FIM')]||r[index('INICIO')]),kind:E.normalize(r[index('TIPO')]).toLowerCase(),label:String(r[index('DESCRICAO')]||'')}));if(pdfURL)URL.revokeObjectURL(pdfURL);pdfURL=null;}
+  }else{const sheets=await fileRows(file),all=sheets[0].rows,aliases={start:['inicio','Data inicial'],end:['fim','Data final'],kind:['tipo'],label:['descricao']};
+ const row=E.headerIndex(all,aliases),map=E.headerColumns(all[row]||[],aliases);
+ if(map.start==null||map.kind==null)throw Error('Colunas inicio e tipo ausentes ou ambíguas no calendário.');
+ events=all.slice(row+1).filter(r=>r.some(v=>String(v).trim())).map(r=>({start:E.dateISO(r[map.start]),end:E.dateISO(r[map.end]||r[map.start]),kind:E.normalize(r[map.kind]).toLowerCase(),label:map.label==null?'':String(r[map.label]||'')}));if(pdfURL)URL.revokeObjectURL(pdfURL);pdfURL=null;}
   calendarDraft={year,events:E.validateEvents(events,year),source:file.name,warning};drawCalendarEditor();$('#calendar-editor').scrollIntoView({behavior:'smooth'});
  }
  function printStudent(){const s=byId(studentId);if(!E.hasStudentIdentity(s))throw Error('Não é possível emitir notificação sem nome e CGM confirmados.');const m=metric(s);$('#print-area').innerHTML=`<header><h1>Colégio Estadual Jardim Interlagos</h1><p>Notificação aos pais ou responsáveis</p></header><p>Data: ${formatDate(E.today())}</p><h2>${h(s.name||'Nome não informado')}</h2><p>Matrícula / CGM: ${h(s.registration)}<br>Turma: ${h(group(s))}</p><p>Prezados pais ou responsáveis, solicitamos contato com a secretaria para acompanhamento da situação escolar do(a) estudante acima identificado(a).</p><h3>Frequência escolar</h3><p>${m.frequency==null?'Frequência não informada na base atual.':`Período: ${h(s.period||'não informado')}<br>Aulas dadas: ${s.classes} · Faltas: ${s.absences}<br>Frequência: ${pct(m.frequency)} · Situação: ${h(m.freqStatus)}`}</p><h3>Documentos a regularizar</h3>${m.docs.length?`<ul>${m.docs.map(k=>`<li>${h(E.DOCS[k])} — ${h(s.documents[k])}</li>`).join('')}</ul>`:'<p>Nenhuma pendência documental identificada nos dados disponíveis.</p>'}<p>Solicitamos a apresentação dos documentos ou o esclarecimento das pendências junto à secretaria.</p><p class="signature">____________________________________<br>Secretaria / responsável pelo atendimento</p><p class="signature">____________________________________<br>Ciência do pai, mãe ou responsável · Data: ____/____/________</p>`;document.body.classList.add('printing');window.print();}

@@ -8,7 +8,10 @@ const {pathToFileURL}=require('url');
  const seed=JSON.parse(html.match(/<script id="initial-data" type="application\/json">([\s\S]*?)<\/script>/)[1]);
  seed.students=data.data.map(row=>({id:String(row[1]),registration:String(row[1]),name:String(row[2]),group:'8º Ano C',series:'8EF',status:'MATRICULADO',rosterYear:String(seed.referenceYear),rosterStudent:true,documents:{},sources:{},history:[]}));
  const first=seed.students[0];
+ const physical=data.blocks.find(b=>E.normalize(b.name).replace(/\./g,'').includes('FISICA'));
+ assert(physical);assert.equal(E.importGradeNumber(data.data[0][physical.col+2]),null);
  seed.grades=[{year:seed.referenceYear,registration:first.registration,name:first.name,group:first.group,discipline:data.blocks[0].name,notes:[1,2,3],manual:[true,false,false]},
+ {year:seed.referenceYear,registration:first.registration,name:first.name,group:first.group,discipline:'Educação Física',notes:[1,2,7]},
  {year:seed.referenceYear-1,registration:first.registration,name:first.name,group:'7º Ano C',discipline:'Histórico anterior',notes:[9,9,9]}];
  const browser=await chromium.launch({headless:true,executablePath:process.env.EDGE_PATH||'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'});
  try{
@@ -37,9 +40,23 @@ const {pathToFileURL}=require('url');
     const actual=saved.find(r=>r.year===seed.referenceYear&&r.registration===String(row[1])&&r.discipline===subject);
     const expected=[0,1,2].map(t=>E.importGradeNumber(row[block.col+t]));
     if(row[1]===first.registration&&i===0)expected[0]=1;
+    if(row[1]===first.registration&&block===physical)expected[2]=7;
     assert.deepEqual(actual.notes,expected);
    }
    assert.deepEqual(errors,[]);await page.close();
+  }
+  for(const file of files){
+   const page=await browser.newPage();await page.route('https://**',r=>r.abort());
+   await page.addInitScript(seed=>localStorage.setItem('eduanalytics_db_v1',JSON.stringify(seed)),seed);
+   await page.goto(pathToFileURL(app).href+'#importar');
+   if(await page.locator('#cloud-gate').isVisible())await page.locator('[data-action=cloud-local-only]').click();
+   for(const name of ['xlsx.full.min.js','pdf.min.js','pdf.worker.min.js'])await page.addScriptTag({path:path.resolve(__dirname,'../../tmp',name)});
+   await page.locator('#batch-input').setInputFiles(file);
+   await page.getByRole('button',{name:'Conferir notas em sequência',exact:true}).click();
+   await page.locator('#grades-consolidated').waitFor();
+   assert.equal(await page.locator('[data-consolidated-subject]').count(),data.blocks.length);
+   assert.equal(await page.locator('#grades-pdf-links').count(),0);
+   await page.close();
   }
   console.log('PASS: actual CSV/XLSX/9-page PDF, automatic sheet selection, roster CGM linkage, all term cells, protected notes and prior year.');
  }finally{await browser.close();}
