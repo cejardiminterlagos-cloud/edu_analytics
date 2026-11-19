@@ -24,6 +24,7 @@ const {pathToFileURL}=require('node:url');
   assert.deepEqual(await p.evaluate(()=>EduApp.getState().grades),seed.grades);
   await p.getByText('Lista completa de disciplinas · conferir',{exact:true}).click();
   await p.locator('#grade-curriculum-subjects').fill('Arte');await p.locator('#grade-curriculum input[type=checkbox]').check();
+  p.once('dialog',dialog=>{assert.match(dialog.message(),/Matemática/);assert.match(dialog.message(),/0 registro/);return dialog.accept();});
   await p.getByRole('button',{name:'Confirmar lista de disciplinas',exact:true}).click();
   await p.waitForFunction(n=>EduApp.getState().gradeCurricula?.[0]?.disciplines.length===n,1);
   assert.match(await p.locator('.grade-matrix').innerText(),/Geral: Aprofundamento · 8,0/);
