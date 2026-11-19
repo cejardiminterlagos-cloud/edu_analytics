@@ -30,13 +30,13 @@ const path=require('node:path'),fs=require('node:fs'),assert=require('node:asser
  await page.locator('#grades-group').selectOption('9º A');
  const math=page.getByRole('row').filter({has:page.getByRole('rowheader',{name:'Matemática',exact:true})});
  assert.deepEqual((await math.getByRole('cell').allTextContents()).map(s=>s.split(' · ')[0]),['2','1','3','4']);
- await page.locator('#grades-level').selectOption('below');
+ await page.locator('[data-action=grades-level][data-value=below]').click();
  assert.deepEqual((await math.getByRole('cell').allTextContents()).map(s=>s.split(' · ')[0]),['2','1','3','4']);
  await page.getByRole('button',{name:'Limpar filtros'}).click();
  await page.reload();await page.getByRole('heading',{name:'Se Liga!',exact:true}).waitFor();
  if(await page.locator('#cloud-gate').isVisible())await page.locator('[data-action="cloud-local-only"]').click();
  assert.equal(await page.evaluate(()=>EduApp.getState().grades.length),150);
- await page.locator('#grades-level').selectOption('below');assert(await page.locator('#grade-school-overview tbody tr').count()<10);
+ await page.locator('[data-action=grades-level][data-value=below]').click();assert(await page.locator('#grade-school-overview tbody tr').count()<10);
  await page.getByRole('button',{name:'Limpar filtros'}).click();
  await page.locator('#grades-discipline').selectOption('MATEMATICA');
  assert.equal(await page.locator('#grade-school-overview thead th').count(),5);assert.match(await page.locator('#grade-school-overview thead').innerText(),/Média da disciplina/);
