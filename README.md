@@ -25,6 +25,8 @@ No painel do Supabase, em **Authentication → URL Configuration**, defina o Sit
 
 ## Relatórios Se Liga!
 
+As tags do Se Liga! mostram quantidade e percentual por conceito. Sem turma selecionada, resumem a escola no ano de referência; turma, disciplina e busca delimitam o recorte. O filtro de conceito altera a lista, mas mantém os percentuais de referência. O diagnóstico da turma mostra percentuais sobre a turma inteira, tanto no conceito geral quanto por disciplina. Recortes vazios exibem `0 · 0,0%`.
+
 A leitura de consolidados reconhece T1/T2/T3 e as variantes `1º Tri` e `Nota 1ºTri` mesmo com os trimestres reordenados. Identidades combinadas (`Nome - CGM` ou `Nome / CGM: número` com quebra de linha) e tabelas verticais com `Aluno e CGM` são normalizadas antes da conferência. No formato vertical, a identidade só continua dentro do bloco: linha vazia encerra o vínculo e disciplina sem estudante confirmado bloqueia a leitura. Abas verticais com o mesmo cabeçalho são reunidas em **Todas as tabelas de notas**; as abas originais continuam disponíveis. Duplicidades e divergências bloqueiam a leitura antes de salvar.
 
 O PDF consolidado com CGMs sob **ESTUDANTE** também aceita páginas de continuação sem identificação repetida, desde que mantenham a sequência completa dos campos e a mesma quantidade, ordem e geometria de linhas. Esse perfil exige a ordem original da exportação: uma troca de estudantes sem mudança de geometria não pode ser detectada sem CGMs repetidos nas continuações. O ano continua sendo o selecionado na tela, validado contra a coluna de ano quando presente; a turma vem exclusivamente do cadastro por CGM e ano. Testes sintéticos: `node tests/grade-layout-variations.mjs`.
