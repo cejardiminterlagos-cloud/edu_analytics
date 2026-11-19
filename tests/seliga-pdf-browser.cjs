@@ -45,7 +45,7 @@ const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),vm=
  await page.locator('[data-action="student-grade-filter"][data-value=""]').click();
  await page.screenshot({path:path.resolve(__dirname,'../../tmp/seliga/individual-test.png')});
  await page.getByRole('button',{name:'Fechar',exact:true}).click();await page.getByRole('link',{name:'Se Liga!',exact:true}).click();
- assert.equal(await page.locator('#view .grade-matrix tbody tr').count(),35);
+ assert.equal(await page.locator('#grade-school-overview tbody tr').count(),35);
  assert.deepEqual(errors,[]);console.log('PASS: real PDF 35 x 12 extraction, CGM review, application, no original files, individual dossier and PDF.');
  }finally{await b.close();}
 })().catch(e=>{console.error(e);process.exit(1)});

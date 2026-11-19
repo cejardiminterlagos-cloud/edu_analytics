@@ -11,7 +11,7 @@ try{
 const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.message));await p.route('https://**',r=>r.abort());
 await p.addInitScript(seed=>{localStorage.setItem('eduanalytics_db_v1',JSON.stringify(seed));window.print=()=>{};},seed);
 await p.goto(pathToFileURL(app).href+'#seliga');if(await p.locator('#cloud-gate').isVisible())await p.locator('[data-action=cloud-local-only]').click();
-assert.match(await p.locator('.grade-matrix').innerText(),/Geral: Reforço · 6,5/);
+await p.locator('#grades-group').selectOption('8º Ano A');assert.match(await p.locator('.grade-matrix').innerText(),/Geral: Reforço · 6,5/);
 assert.match(await p.locator('.grade-matrix').innerText(),/Geral: Sem Nota/);
 await p.locator('#grades-discipline').selectOption('ARTE');
 assert.match(await p.locator('.grade-matrix').innerText(),/Geral: Reforço · 6,5/);
