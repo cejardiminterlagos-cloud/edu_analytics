@@ -1,0 +1,24 @@
+import './seliga.mjs';
+import assert from 'node:assert/strict';
+const E=window.Edu;
+const combined=[['Título'],['Nº','','Arte','','','','',''],['','','Nota 3ºTri','T1','2º Tri','Média','F','Grupo'],['1','Ana - 1234567890','8','0','6','','','']];
+const old=structuredClone(combined),parsed=E.consolidatedGrades(combined);
+assert(parsed);assert.deepEqual(parsed.data[0].slice(1,6),['1234567890','Ana','0','6','8']);assert.deepEqual(combined,old);
+const vertical=[['Aluno e CGM','Disciplina','Nota 3ºTri','Nota 1ºTri','Nota 2ºTri'],['Ana\nCGM: 1234567890','Arte','8','0','6'],['','Ciências','','7','8'],['Bia - 1234567891','Arte','9','8','7']];
+const v=E.consolidatedGrades(vertical);assert.equal(v.data.length,2);assert.equal(v.blocks.length,2);assert.deepEqual(v.data[0].slice(3,6),['0','6','8']);
+assert.deepEqual(E.consolidatedGrades(vertical.map((r,i)=>[...r,i?'2025':'Ano letivo'])).declaredYears,[2025]);
+assert.throws(()=>E.consolidatedGrades([vertical[0],vertical[2]]),/identidade/i);
+assert.throws(()=>E.consolidatedGrades([...vertical,vertical[1].map((x,i)=>i===2?'1':x)]),/duplicad|conflit/i);
+const moved=vertical.map(row=>[row[3],row[1],row[0],row[4],row[2]]);assert.deepEqual(E.consolidatedGrades(moved).data,v.data);
+const all=E.combineGradeSheets([{name:'Table 1',rows:vertical.slice(0,3)},{name:'Table 2',rows:[vertical[0],vertical[3]]}]);assert.equal(E.consolidatedGrades(all[0].rows).data.length,2);
+assert.throws(()=>E.combineGradeSheets([{name:'A',rows:vertical},{name:'B',rows:vertical}]),/duplicad/);
+const ambiguous=structuredClone(combined);ambiguous[2][4]='T1';assert.throws(()=>E.consolidatedGrades(ambiguous),/trimestr|duplicad/i);
+console.log('PASS: combined identity, reordered terms, vertical continuation, reordered columns, duplicates and orphan rows.');
+const w=(text,x,y=-100)=>({text,x,y,width:10});
+const pdfPages=[[w('ESTUDANTE',50),w('Arte',200,-85),...['T1','T2','T3','Média','F'].map((t,i)=>w(t,150+i*50)),w('1234567890',50,-130),w('0',150,-130),w('6',200,-130),w('8',250,-130)],
+ [w('Arte',50,-85),w('Grupo',150),w('Reforço',150,-130)]];
+const pdf=E.consolidatedGrades(E.parseConsolidatedGradePDF(pdfPages).rows);assert.equal(pdf.needsRosterNames,true);assert.deepEqual(pdf.data[0].slice(3,6),['0','6','8']);
+const split=[pdfPages[0].filter(x=>!['Média','F'].includes(x.text)),[w('Arte',200,-85),w('Média',150),w('F',200),w('Grupo',250),w('4,7',150,-130),w('4',200,-130),w('Reforço',250,-130)]];
+assert.deepEqual(E.consolidatedGrades(E.parseConsolidatedGradePDF(split).rows).data[0].slice(3,6),['0','6','8']);
+assert.throws(()=>E.parseConsolidatedGradePDF([pdfPages[0],pdfPages[1].map(x=>x.text==='Reforço'?{...x,y:-150}:x)]),/linha|estrutura/i);
+assert.equal(E.parseConsolidatedGradePDF([pdfPages[1],pdfPages[0]]),null);

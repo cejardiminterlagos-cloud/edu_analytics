@@ -486,7 +486,71 @@ window.Edu = (() => {
   }
   return validateGrades([...records.values()]);
  }
- function consolidatedGrades(rows){
+ function gradeTerm(value){
+  const key=headerKey(value),match=key.match(/^(?:T([123])|(?:NOTA(?:DO)?)?([123])(?:TRI|TRIMESTRE))$/);return match?Number(match[1]||match[2])-1:null;
+ }
+ function combinedGradeIdentity(value){
+  const text=String(value??'').trim(),match=text.match(/^(.*?)\s*(?:[-–—]|CGM\s*:?)\s*(\d{5,15})\s*$/is);
+  return match&&match[1].trim()?{registration:match[2],name:match[1].trim()}:null;
+ }
+ function combineGradeSheets(sheets){
+  if(sheets.length<2||!sheets.every(s=>s.rows[0]?.some(v=>['ALUNOECGM','ALUNOCGM','ESTUDANTECGM'].includes(headerKey(v)))))return sheets;
+  const head=sheets[0].rows[0];
+  if(!sheets.every(s=>JSON.stringify(s.rows[0].map(headerKey))===JSON.stringify(head.map(headerKey))))return sheets;
+  const rows=[head,...sheets.flatMap(s=>[Array(head.length).fill(''),...s.rows.slice(1)])];
+  consolidatedGrades(rows);
+  return [{name:'Todas as tabelas de notas',rows},...sheets];
+ }
+ function normalizeGradeTable(rows){
+  const identityAliases={registration:['CGM','MATRICULA','MATRICULA CGM'],name:['NOME DO ESTUDANTE','ESTUDANTE','NOME DO ALUNO','NOME','ALUNO'],combined:['ALUNO E CGM','ALUNO CGM','ESTUDANTE CGM'],discipline:['DISCIPLINA','COMPONENTE CURRICULAR']};
+  const vertical=rows.slice(0,50).findIndex(r=>{const m=headerColumns(r,identityAliases);return m.combined!=null&&m.discipline!=null;});
+  const make=(subjects,people,noNames=false,years=[])=>({rows:[noNames?['nº','ESTUDANTE',...subjects.flatMap(s=>[s,'','','','',''])]:['nº','CGM','NOME DO ESTUDANTE',...subjects.flatMap(s=>[s,'','','','',''])],noNames?['','',...subjects.flatMap(()=>['T1','T2','T3','Média','F','Grupo'])]:['','','',...subjects.flatMap(()=>['T1','T2','T3','Média','F','Grupo'])],...people.map((p,i)=>[String(i+1),p.registration,...(noNames?[]:[p.name]),...subjects.flatMap(s=>[...(p.notes.get(s)||['','','']),'','',''])])],years});
+  if(vertical>=0){
+   const head=rows[vertical],m=headerColumns(head,identityAliases),terms=[0,1,2].map(t=>head.flatMap((v,i)=>gradeTerm(v)===t?[i]:[]));
+   if(terms.some(a=>a.length!==1))throw Error('Cabeçalho trimestral ausente ou duplicado no relatório por disciplina.');
+   const subjects=[],people=new Map();let person=null;
+   for(const [i,row]of rows.slice(vertical+1).entries()){
+    if(!row.some(v=>String(v??'').trim())){person=null;continue;}
+    if(String(row[m.combined]??'').trim()){
+     const id=combinedGradeIdentity(row[m.combined]);if(!id)throw Error('Identidade inválida na linha '+(vertical+i+2)+'.');
+     person=people.get(id.registration);if(person&&normalize(person.name)!==normalize(id.name))throw Error('Identidade conflitante para o mesmo CGM.');
+     if(!person){person={...id,notes:new Map()};people.set(id.registration,person);}
+    }
+    if(!person)throw Error('Linha de disciplina sem identidade de estudante confirmada.');
+    const subject=String(row[m.discipline]??'').trim();if(!subject)throw Error('Disciplina ausente na linha '+(vertical+i+2)+'.');
+    if(person.notes.has(subject))throw Error('Disciplina duplicada para o mesmo CGM.');
+    const notes=terms.map(a=>row[a[0]]??'');notes.forEach(importGradeNumber);person.notes.set(subject,notes);if(!subjects.includes(subject))subjects.push(subject);
+   }
+   const yearColumns=head.flatMap((v,i)=>['ANO','ANOLETIVO'].includes(headerKey(v))?[i]:[]),years=[...new Set(rows.slice(vertical+1).flatMap(r=>yearColumns.map(i=>String(r[i]??'').trim()).filter(Boolean)))].map(v=>{const n=Number(v);if(!Number.isInteger(n)||n<2000||n>2100)throw Error('Ano inválido no consolidado.');return n;});
+   return make(subjects,[...people.values()],false,years);
+  }
+  const ti=rows.slice(0,50).findIndex(r=>r.filter(v=>gradeTerm(v)!==null).length>=3&&!r.some(v=>['DISCIPLINA','COMPONENTECURRICULAR'].includes(headerKey(v))));
+  if(ti<0)return null;
+  const terms=rows[ti],identityRows=rows.slice(Math.max(0,ti-2),ti+1),idHead=identityRows.find(r=>{const m=headerColumns(r,identityAliases);return m.registration!=null||m.name!=null||m.combined!=null;});
+  let idMap=idHead?headerColumns(idHead,identityAliases):{},combinedCol=idMap.combined;
+  const data=rows.slice(ti+1).filter(r=>r.some(v=>String(v??'').trim()));
+  if(data.some(r=>r.length!==terms.length))throw Error('Linha inválida no consolidado: quantidade de colunas diferente do cabeçalho.');
+  if(combinedCol==null&&idMap.registration==null){const candidates=terms.map((_,i)=>i).filter(i=>data.length&&data.every(r=>combinedGradeIdentity(r[i])));if(candidates.length===1)combinedCol=candidates[0];}
+  if(idMap.registration==null&&combinedCol==null&&idMap.name!=null&&data.every(r=>/^\d{5,15}$/.test(String(r[idMap.name]??'').trim())))idMap={registration:idMap.name};
+  if(idMap.registration==null&&combinedCol==null)return null;
+  const title=ti>0?rows[ti-1]:[],blocks=new Map();let current='';
+  for(let i=0;i<terms.length;i++){
+   if(String(title[i]??'').trim())current=String(title[i]).trim();
+   const term=gradeTerm(terms[i]);if(term===null)continue;
+   if(!current)throw Error('Disciplina não identificada para coluna trimestral '+(i+1)+'.');
+   if(!blocks.has(current))blocks.set(current,[]);const cols=blocks.get(current);if(cols[term]!=null)throw Error('Cabeçalho trimestral duplicado: '+current);cols[term]=i;
+  }
+  if([...blocks.values()].some(a=>[0,1,2].some(t=>a[t]==null)))throw Error('Cabeçalho trimestral incompleto.');
+  const noNames=combinedCol==null&&idMap.name==null,people=data.map(r=>{
+   const id=combinedCol!=null?combinedGradeIdentity(r[combinedCol]):{registration:String(r[idMap.registration]??'').trim(),name:String(r[idMap.name]??'').trim()};
+   if(!id||!/^\d{1,40}$/.test(id.registration)||!noNames&&!id.name)throw Error('Identidade inválida no consolidado: confira CGM e nome.');
+   return {...id,notes:new Map([...blocks].map(([s,cols])=>[s,cols.map((c,t)=>{const raw=r[c]??'';try{importGradeNumber(raw);}catch(err){throw Error('Linha '+(rows.indexOf(r)+1)+' / CGM '+id.registration+' / '+s+' / T'+(t+1)+' / valor '+String(raw).slice(0,30)+': '+err.message);}return raw;})]))};
+  });
+  const yc=(idHead||[]).flatMap((v,i)=>['ANO','ANOLETIVO'].includes(headerKey(v))?[i]:[]),years=[...new Set(data.flatMap(r=>yc.map(i=>String(r[i]??'').trim()).filter(Boolean)))].map(v=>{const n=Number(v);if(!Number.isInteger(n)||n<2000||n>2100)throw Error('Ano inválido no consolidado.');return n;});
+  return make([...blocks.keys()],people,noNames,years);
+ }
+ function consolidatedGrades(rows,normalized=false){
+  if(!normalized){const table=normalizeGradeTable(rows);if(table){const result=consolidatedGrades(table.rows,true);return {...result,...(table.years.length?{declaredYears:table.years}:{})};}}
   const studentHeaders=['NOME DO ESTUDANTE','ESTUDANTE','NOME DO ALUNO','NOME','ALUNO'];
   const identity=r=>headerColumns(r,{registration:['CGM','MATRICULA','MATRICULA CGM'],name:studentHeaders});
   let start=rows.findIndex(r=>{const map=identity(r);return map.registration!=null&&map.name!=null&&!r.some(v=>['DISCIPLINA','COMPONENTECURRICULAR'].includes(headerKey(v)));}),declaredYears=[];
@@ -613,9 +677,58 @@ window.Edu = (() => {
   return counts;
  }
 
+ function parseCGMGradePDF(pages){
+  if(!pages[0]?.some(w=>['ESTUDANTE','CGM'].includes(normalize(w.text))))return null;
+  if(!pages[0].some(w=>gradeTerm(w.text)!==null))return null;
+  const roles=['T1','T2','T3','MEDIA','F','GRUPO'],role=v=>{const t=gradeTerm(v);return t!==null?'T'+(t+1):/^F(?:\s|$)/.test(normalize(v))?'F':normalize(v);};
+  const students=[],templates=[],titles=[],values=new Map();let column=0,headers=null,segment=-1,part=0,headerY=0;
+  for(const [pi,words]of pages.entries()){
+   const roleWords=words.filter(w=>roles.includes(role(w.text))),ys=[...new Set(roleWords.map(w=>Math.round(w.y)))];
+   const hy=ys.find(y=>roleWords.filter(w=>Math.abs(w.y-y)<1).length>=3||roleWords.some(w=>Math.abs(w.y-y)<1&&role(w.text)==='GRUPO'));
+   if(hy!==undefined){
+    if(headers&&part!==templates.length)throw Error('PDF incompleto: estrutura de linhas diferente entre blocos.');
+    segment++;part=0;headerY=hy;headers=roleWords.filter(w=>Math.abs(w.y-hy)<1).sort((a,b)=>a.x-b.x);
+    const firstColumn=column;
+    for(const h of headers){if(role(h.text)!==roles[column%6])throw Error('PDF incompleto: sequência trimestral interrompida na página '+(pi+1)+'.');column++;}
+    const nearby=words.filter(w=>w.y>hy+3&&w.y<hy+25&&!['ESTUDANTE','CGM','N','NO'].includes(headerKey(w.text)));
+    for(const title of nearby){
+     const x=title.x+title.width/2;let at=headers.findLastIndex(h=>h.x<=x);if(at<0)at=0;
+     const index=Math.floor((firstColumn+at)/6),name=title.text.trim(),previous=titles[index];
+     if(previous&&!normalize(name).startsWith(normalize(previous))&&!normalize(previous).startsWith(normalize(name))&&!normalize(name).endsWith(normalize(previous))&&!normalize(previous).endsWith(normalize(name)))throw Error('Disciplina conflitante na página '+(pi+1)+': '+previous+' / '+name);
+     if(!previous||name.length>previous.length)titles[index]=name;
+    }
+    headers=headers.map((h,i)=>({...h,column:firstColumn+i}));
+   }else if(!headers)throw Error('Cabeçalho trimestral não identificado.');
+   const body=hy===undefined?words:words.filter(w=>w.y<headerY-3);
+   let anchors;
+   if(segment===0){
+    const left=headers[0].x;
+    anchors=body.filter(w=>/^\d{5,15}$/.test(w.text)&&w.x<left-10).sort((a,b)=>b.y-a.y);
+    if(!anchors.length)throw Error('Identidade ausente no bloco inicial do PDF.');
+    templates.push(anchors.map(w=>w.y));
+    for(const a of anchors){if(students.includes(a.text))throw Error('CGM duplicado no PDF.');students.push(a.text);values.set(a.text,[]);}
+   }else{
+    if(!templates[part])throw Error('Estrutura de linhas inesperada na página '+(pi+1)+'.');
+    // shortcut: sem CGM nas continuações, exige a ordem e a geometria originais; páginas reordenadas exigem nova exportação com identificação.
+    anchors=templates[part].map(y=>({y}));
+    const actual=[...new Set(body.map(w=>Math.round(w.y*100)/100))];
+    if(actual.length!==anchors.length||actual.some(y=>!anchors.some(a=>Math.abs(a.y-y)<2)))throw Error('Estrutura de linhas divergente na página '+(pi+1)+'.');
+   }
+   const offset=templates.slice(0,part).reduce((n,a)=>n+a.length,0);
+   for(const [i,a]of anchors.entries())for(const [ci,h]of headers.entries()){
+    if(h.column%6>=3)continue;
+    const left=h.x-5,right=headers[ci+1]?headers[ci+1].x-5:Infinity,cells=body.filter(w=>Math.abs(w.y-a.y)<2&&w.x>=left&&w.x<right);
+    if(cells.length>1)throw Error('Célula ambígua na página '+(pi+1)+'.');
+    const raw=cells[0]?.text||'';importGradeNumber(raw);values.get(students[offset+i])[h.column]=raw;
+   }
+   part++;
+  }
+  if(column%6||part!==templates.length||titles.length!==column/6||titles.some(t=>!t))throw Error('PDF incompleto: disciplinas ou trimestres ausentes.');
+  return {name:'Consolidado PDF',rows:[['nº','ESTUDANTE',...titles.flatMap(t=>[t,'','','','',''])],['','',...titles.flatMap(()=>['T1','T2','T3','Média','F','Grupo'])],...students.map((id,i)=>[String(i+1),id,...Array.from({length:column},(_,c)=>values.get(id)[c]??'')])]};
+ }
  function parseConsolidatedGradePDF(pages){
   const first=pages[0]||[],cgmHeader=first.find(w=>normalize(w.text)==='CGM'),identityHeader=first.find(w=>normalize(w.text)==='NOME DO ESTUDANTE');
-  if(!cgmHeader||!identityHeader)return null;
+  if(!cgmHeader||!identityHeader)return parseCGMGradePDF(pages);
   if(Math.abs(cgmHeader.y-identityHeader.y)>=2)throw Error('Cabeçalho de identificação inválido no consolidado PDF.');
   const titles=[],students=new Map(),roles=['T1','T2','T3','MEDIA','F','GRUPO'];let column=0;
   const role=text=>{const key=normalize(text);return /^F\s*(?:\(.*\))?$/.test(key)?'F':key;};
@@ -728,7 +841,7 @@ window.Edu = (() => {
   return {p_grades:after.filter(r=>JSON.stringify(payload(old.get(gradeKey(r))||{notes:[]}))!==JSON.stringify(payload(r))).map(payload),p_removed_grades:before.filter(r=>!current.has(gradeKey(r))).map(r=>({year:r.year,registration:r.registration,disciplineKey:normalize(r.discipline)}))};
  }
 
- return {headerMatches,headerColumns,headerIndex,parseConsolidatedGradePDF,combineImageGrades,recoverStudentProfile,hasStudentIdentity,verifyRosterCoverage,recoverStudentNames,confirmedAbsence,overallGrade,consolidatedGrades,consolidatedGradeRemovals,imageGradeStudents,imageGradeRows,imageGradeSubjects,imageGradeEdges,gradeDistribution,consolidateGradeCalls,gradeDelta,parseGradePDF,suggestGradeLink,GRADE_LEVELS,gradeNumber,importGradeNumber,gradeSummary,gradeKey,validateGrades,mergeGrades,parseGrades,DOCS,IDEAL,LABELS,SPECIAL_COURSES,matchSpecialCourses,activeRosterStatus,isActiveRosterStudent,rosterPriority,normalize,esc,uid,today,dateISO,parseCSV,toCSV,series,number,docStatus,pending,metrics,isFinalYear,enrollmentSummary,month,migrateFrequency,monthlySummary,mergeStudentDatasets,validateEvents,deadline};
+ return {combineGradeSheets,headerMatches,headerColumns,headerIndex,parseConsolidatedGradePDF,combineImageGrades,recoverStudentProfile,hasStudentIdentity,verifyRosterCoverage,recoverStudentNames,confirmedAbsence,overallGrade,consolidatedGrades,consolidatedGradeRemovals,imageGradeStudents,imageGradeRows,imageGradeSubjects,imageGradeEdges,gradeDistribution,consolidateGradeCalls,gradeDelta,parseGradePDF,suggestGradeLink,GRADE_LEVELS,gradeNumber,importGradeNumber,gradeSummary,gradeKey,validateGrades,mergeGrades,parseGrades,DOCS,IDEAL,LABELS,SPECIAL_COURSES,matchSpecialCourses,activeRosterStatus,isActiveRosterStudent,rosterPriority,normalize,esc,uid,today,dateISO,parseCSV,toCSV,series,number,docStatus,pending,metrics,isFinalYear,enrollmentSummary,month,migrateFrequency,monthlySummary,mergeStudentDatasets,validateEvents,deadline};
 })();
 </script>
 <script id="application">'use strict';
@@ -1043,7 +1156,7 @@ window.Edu = (() => {
  function methodology(){return `<details class="methodology"><summary>Como os indicadores são calculados</summary><p>Frequência = (aulas dadas − faltas) ÷ aulas dadas × 100. Busca ativa abaixo de 75%; atenção de 75% a menos de 80%; regular a partir de 80%. Zero aulas e dados ausentes ficam sem classificação.</p><p>Distorção considera a idade completada no ano de referência, comparada à idade ideal da série (11 a 17 anos). Atraso de pelo menos 2 anos gera alerta. A idade atual também aparece no dossiê. Taxa calculada apenas sobre alunos com nascimento e série informados.</p><p>Score operacional, não oficial do MEC: 50 pontos para frequência abaixo de 75%, 25 entre 75% e 80%, 20 para distorção e 6 por documento pendente (até 30). Com dados ausentes, o score é parcial.</p><p><a href="https://download.inep.gov.br/publicacoes/institucionais/estatisticas_e_indicadores/dicionario_de_indicadores_educacionais_formulas_de_calculo.pdf" target="_blank" rel="noopener noreferrer">Referência metodológica do INEP</a>. Alertas apoiam o acompanhamento; não representam decisão de aprovação escolar.</p></details>`;}
  let gradeFilters={group:'',discipline:'',level:'',search:''},gradeImport=null,gradePreview=null;
  const GRADE_FIELDS=[['registration','CGM'],['name','Nome do estudante'],['group','Turma'],['discipline','Disciplina'],['t1','1º trimestre'],['t2','2º trimestre'],['t3','3º trimestre']];
- const GRADE_ALIASES={registration:['CGM','MATRICULA','MATRICULA CGM'],name:['NOME','ESTUDANTE','ALUNO','NOME DO ESTUDANTE','NOME DO ALUNO'],group:['TURMA'],discipline:['DISCIPLINA','DISCIPLINAS','COMPONENTE CURRICULAR'],t1:['1 TRIMESTRE','1º TRIMESTRE','NOTA 1','NOTA DO 1º TRIMESTRE','T1'],t2:['2 TRIMESTRE','2º TRIMESTRE','NOTA 2','NOTA DO 2º TRIMESTRE','T2'],t3:['3 TRIMESTRE','3º TRIMESTRE','NOTA 3','NOTA DO 3º TRIMESTRE','T3']};
+ const GRADE_ALIASES={registration:['CGM','MATRICULA','MATRICULA CGM'],name:['NOME','ESTUDANTE','ALUNO','NOME DO ESTUDANTE','NOME DO ALUNO'],group:['TURMA'],discipline:['DISCIPLINA','DISCIPLINAS','COMPONENTE CURRICULAR'],t1:['Nota 1ºTri','1º Tri','1 TRIMESTRE','1º TRIMESTRE','NOTA 1','NOTA DO 1º TRIMESTRE','T1'],t2:['Nota 2ºTri','2º Tri','2 TRIMESTRE','2º TRIMESTRE','NOTA 2','NOTA DO 2º TRIMESTRE','T2'],t3:['Nota 3ºTri','3º Tri','3 TRIMESTRE','3º TRIMESTRE','NOTA 3','NOTA DO 3º TRIMESTRE','T3']};
  const gradeFormat=n=>n==null?'—':n.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1});
  function activeGradeRows(year){
   const roster=new Map(db.students.map(s=>[s.registration,studentForReferenceYear(s,year)]));
@@ -1535,7 +1648,7 @@ window.Edu = (() => {
   if(file.size>20*1024*1024)throw Error('O arquivo excede 20 MB.');let ext=file.name.split('.').pop().toLowerCase(),buf=await file.arrayBuffer();
   if(ext==='csv'){let text;try{text=new TextDecoder('utf-8',{fatal:true}).decode(buf);}catch{text=new TextDecoder('windows-1252').decode(buf);}return [{name:'CSV',rows:E.parseCSV(text,[...Object.values(ALIASES).flat(),...Object.values(GRADE_ALIASES).flat(),'País de origem','Coluna 1','inicio','fim','tipo','descricao'])}];}
   if(!['xlsx','xls'].includes(ext))throw Error('Selecione CSV, XLSX ou XLS; para PDF escolha o tipo correspondente.');
-  const XLSX=await library('XLSX','https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js');let w=XLSX.read(buf,{type:'array',cellDates:true});return w.SheetNames.map(name=>({name,rows:XLSX.utils.sheet_to_json(w.Sheets[name],{header:1,defval:'',raw:true})}));
+  const XLSX=await library('XLSX','https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js');let w=XLSX.read(buf,{type:'array',cellDates:true});return E.combineGradeSheets(w.SheetNames.map(name=>({name,rows:XLSX.utils.sheet_to_json(w.Sheets[name],{header:1,defval:'',raw:true})})));
  }
  async function readGradeImage(file){
   if(file.size>20*1024*1024)throw Error('A imagem excede 20 MB.');
@@ -1648,7 +1761,7 @@ window.Edu = (() => {
   for(const sheet of [...sheets].sort((a,b)=>Number(named(b))-Number(named(a)))){
    const header=E.headerColumns(sheet.rows[E.headerIndex(sheet.rows,GRADE_ALIASES)]||[],GRADE_ALIASES);
    if(header.registration!=null&&header.discipline!=null&&['t1','t2','t3'].some(k=>header[k]!=null))return sheet;
-   if(sheet.rows.slice(0,50).some(row=>['T1','T2','T3'].every(t=>row.some(v=>E.normalize(v)===t)))&&E.consolidatedGrades(sheet.rows))return sheet;
+   if(E.consolidatedGrades(sheet.rows))return sheet;
   }
   return null;
  }
@@ -1658,7 +1771,7 @@ window.Edu = (() => {
   if(file.gradeSheet)return 'grades';
   if(file.pdfPages){
    const text=file.pdfPages.slice(0,2).flatMap(page=>page.map(w=>E.normalize(w.text)));
-   if(text.join(' ').includes('ACOMPANHAMENTO TRIMESTRAL')||['CGM','NOME DO ESTUDANTE','T1'].every(v=>text.includes(v)))return 'grades';
+   if(text.join(' ').includes('ACOMPANHAMENTO TRIMESTRAL')||['CGM','NOME DO ESTUDANTE','T1'].every(v=>text.includes(v))||['ESTUDANTE','T1','T2','T3','MEDIA'].every(v=>text.includes(v)))return 'grades';
    if(text.some(t=>t.includes('RELACAO DE ALUNOS POR TURMA')))return 'roster';
    if(['AULA','FALTA','FREQ','LETIV'].every(t=>text.includes(t)))return 'frequency';
    return '';
